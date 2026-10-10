@@ -1,10 +1,13 @@
 
-/// Draws only the tiles in the window. A tile's sight is how far inside
-/// the nearest troop's sight it lies, from 0 (outside) to 1 (well inside),
-/// over the last tile of the radius.
+/// The ground is one continuous plane, drawn by client/ground.c. Only
+/// when the graphics can't run its shader is it drawn here instead, tile by
+/// tile and only the tiles in the window, each grayed by how far inside the
+/// nearest troop's sight it lies, from 0 (outside) to 1 (well inside), over
+/// the last tile of the radius.
 
 #include "client/view.h"
 #include "client/depth.h"
+#include "client/ground.h"
 
 #include <raylib.h>
 
@@ -261,7 +264,9 @@ static size_t _vasal_client_view_troops(const vasal_client_game_s* const game,
 size_t vasal_client_view_draw(const vasal_client_game_s* const game,
 	const vasal_client_camera_s* const camera, const float width,
 	const float height) {
-	_vasal_client_view_terrain(game, camera, width, height);
+	if (!vasal_client_ground_draw(game, camera, width, height)) {
+		_vasal_client_view_terrain(game, camera, width, height);
+	}
 	_vasal_client_view_groups(game, camera, width, height);
 	return _vasal_client_view_troops(game, camera, width, height);
 }

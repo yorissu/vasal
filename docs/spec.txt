@@ -2091,12 +2091,15 @@ story client.render
 	milestone: 1
 	links: network.updates capture.bar
 	description: 2D, hand-drawn cartoon style with thick outlines, in an
-		isometric view: the map's grid is turned by 45 degrees and seen at a
-		slant, so a tile is a diamond twice as wide as it is tall, troops and
-		buildings are upright sprites standing on diamond footprints, and
-		circles on the ground (rings, areas) are drawn as ellipses half as tall
-		as wide. (The view was a three-quarter view at first; the user chose
-		isometric on 2026-10-11 to fit the settlement sketch.) The map editor
+		isometric view: the map is turned by 45 degrees and seen at a slant,
+		so the ground looks half as tall as it is wide, troops and buildings
+		are upright sprites standing on it, and circles on the ground (rings,
+		areas) are drawn as ellipses half as tall as wide. The world is one
+		large continuous plane, not a board of tiles: the map keeps a terrain
+		type per tile for the simulation, but no tile is ever seen as a
+		shape; terrain types meet along smooth, wavering borders. (The view
+		was a three-quarter view at first; the user chose isometric on
+		2026-10-11 to fit the settlement sketch.) The map editor
 		shows the map from straight above, which is easier to paint. The user's
 		reference is a cartoon RTS with small, readable troops in formation
 		blocks, flag bearers leading them, large settlement sprites with bars
@@ -2125,6 +2128,13 @@ story client.render
 	criterion 5: review
 		then: Selected vintaines have colored rings under them, capture areas
 			are ringed, and lines lead from a vintaine to its destination.
+	criterion 6: review
+		then: The ground is one continuous plane with sprites on it: no tile
+			shapes, steps or seams show anywhere, terrain types meet along
+			smooth curves however the tiles under them are painted, and the
+			edge of sight is a smooth curve around the troops.
+		why: The user's correction of 2026-10-11: this is not a tile map but
+			a huge plane with sprites on it.
 
 story client.hud
 	title: Heads-up display
