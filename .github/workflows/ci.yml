@@ -1,0 +1,46 @@
+
+# Checks, tests and builds Vasal in the same Docker image as local builds,
+# on every push to main and on demand from GitHub. The check and the tests
+# run in the debug configuration (with sanitizers); the server, client and
+# editor are built in release and kept as the run's artifact. YAML forbids
+# tabs, so this file is indented with spaces.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --tag vasal-build - < .docker/dockerfile
+
+      - name: Check and tests
+        run: |
+          for target in check tests; do
+            docker run --rm --volume "$PWD:/vasal" \
+              --env vasal_config=debug vasal-build \
+              cmake --workflow --preset "$target"
+          done
+
+      - name: Release builds
+        run: |
+          for target in server client editor; do
+            docker run --rm --volume "$PWD:/vasal" \
+              --env vasal_config=release vasal-build \
+              cmake --workflow --preset "$target"
+          done
+
+      - name: Keep the programs
+        uses: actions/upload-artifact@v4
+        with:
+          name: vasal
+          path: |
+            build/linux-release/server/vasal_server
+            build/web-release/web/

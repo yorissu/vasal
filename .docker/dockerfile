@@ -1,0 +1,51 @@
+
+# vasal-build: everything Vasal is built and checked with. The scripts in
+# scripts/ build this image and run CMake in it, with the project folder
+# mounted at /vasal, so the build output appears in the project's build/.
+#
+# One image serves every build: the server, tools and tests are built for
+# Linux with gcc, the client and editor for the browser with Emscripten.
+
+FROM ubuntu:24.04
+
+# gcc (build-essential): the Linux builds.
+# cppcheck (its MISRA add-on needs python3) and clang-tidy: the static
+# analysis of the check target.
+# cmake and ninja-build: the build system.
+# git, curl, xz-utils, python3: Emscripten's installer.
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends \
+		build-essential clang-tidy \
+		cppcheck cmake ninja-build python3 \
+		git ca-certificates curl xz-utils \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Emscripten, pinned to a release.
+ARG emscripten_version=6.0.10
+RUN git clone --depth 1 --branch ${emscripten_version} \
+		https://github.com/emscripten-core/emsdk.git /opt/emsdk \
+	&& /opt/emsdk/emsdk install ${emscripten_version} \
+	&& /opt/emsdk/emsdk activate ${emscripten_version} \
+	&& rm -rf /opt/emsdk/.git
+
+ENV EMSDK=/opt/emsdk \
+	EM_CONFIG=/opt/emsdk/.emscripten \
+	PATH=/opt/emsdk:/opt/emsdk/upstream/emscripten:$PATH \
+	PYTHONDONTWRITEBYTECODE=1
+
+# The CMake toolchain file of the web presets (CMakePresets.json).
+ENV emscripten_toolchain=\
+/opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+
+# Emscripten builds its system libraries the first time they are needed.
+# Building them here keeps every later build from doing it again in a fresh
+# container.
+RUN printf 'int main(void) { return 0; }\n' > /tmp/warm.c \
+	&& emcc /tmp/warm.c -sUSE_GLFW=3 -sMIN_WEBGL_VERSION=2 \
+		-sMAX_WEBGL_VERSION=2 -o /tmp/warm.html \
+	&& emcc -O2 /tmp/warm.c -sUSE_GLFW=3 -sMIN_WEBGL_VERSION=2 \
+		-sMAX_WEBGL_VERSION=2 -o /tmp/warm.html \
+	&& rm -f /tmp/warm.*
+
+WORKDIR /vasal
+CMD ["bash"]

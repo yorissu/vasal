@@ -1,0 +1,64 @@
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Vasal map editor</title>
+		<style>
+			html, body {
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+				background: #202020;
+			}
+			canvas { display: block; }
+		</style>
+	</head>
+	<body>
+		<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+		<input id="open" type="file" accept=".vasalmap" hidden>
+		<script>
+			var Module = { canvas: document.getElementById("canvas") };
+
+			// Opening: the editor calls vasalEditorOpen(); the chosen file
+			// is copied into the editor's buffer and handed over.
+			var vasalEditorPicker = document.getElementById("open");
+			function vasalEditorOpen() {
+				vasalEditorPicker.value = "";
+				vasalEditorPicker.click();
+			}
+			vasalEditorPicker.addEventListener("change", function () {
+				var file = vasalEditorPicker.files[0];
+				if (!file) {
+					return;
+				}
+				file.arrayBuffer().then(function (data) {
+					var bytes = new Uint8Array(data);
+					var capacity = Module._vasal_editor_files_capacity();
+					if (bytes.length > capacity) {
+						Module._vasal_editor_files_opened(0);
+						return;
+					}
+					var start = Module._vasal_editor_files_buffer();
+					Module.HEAPU8.set(bytes, start);
+					Module._vasal_editor_files_opened(bytes.length);
+				});
+			});
+
+			// Saving: the editor writes the map file into its buffer and
+			// calls vasalEditorSave(name); the browser downloads it.
+			function vasalEditorSave(name) {
+				var start = Module._vasal_editor_files_buffer();
+				var size = Module._vasal_editor_files_size();
+				var bytes = Module.HEAPU8.slice(start, start + size);
+				var link = document.createElement("a");
+				link.href = URL.createObjectURL(new Blob([bytes]));
+				link.download = name + ".vasalmap";
+				link.click();
+				URL.revokeObjectURL(link.href);
+			}
+		</script>
+		{{{ SCRIPT }}}
+	</body>
+</html>

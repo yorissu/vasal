@@ -1,0 +1,43 @@
+
+# .clang-tidy: the clang-tidy checks of the check target
+# (.cmake/check.cmake).
+#
+# All bug-finding families are on, and readability. A few checks are off
+# because they contradict the code style (docs/code_style.md):
+#	avoid-const-params-in-decls  the style puts const on value parameters
+#	identifier-length            loop counters (i, j) and maths symbols
+#	magic-numbers                protocol and file format constants
+#	easily-swappable-parameters  clamp(value, minimum, maximum) and the like
+#	misc-include-cleaner         engine/types.h deliberately provides the
+#	                             standard types
+#	DeprecatedOrUnsafeBuffer...  wants memcpy_s and the like, from C11's
+#	(clang-analyzer-security.    optional Annex K, which neither glibc nor
+#	insecureAPI)                 Emscripten has; copies are bounded by
+#	                             sizeof instead
+#	reserved-identifier          private names start with an underscore
+#	(bugprone, cert-dcl37-c,     (docs/code_style.md)
+#	cert-dcl51-cpp)
+# uppercase-literal-suffix only insists on an uppercase L (MISRA C:2012
+# rule 7.3); 0U and 1.0f stay as they are.
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  misc-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-avoid-const-params-in-decls,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -bugprone-easily-swappable-parameters,
+  -misc-include-cleaner,
+  -bugprone-reserved-identifier,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+CheckOptions:
+  readability-uppercase-literal-suffix.NewSuffixes: 'L;LL;LU;LLU'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/(engine|server|client|editor)/.*'

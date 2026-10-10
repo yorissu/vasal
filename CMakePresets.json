@@ -1,0 +1,76 @@
+
+{
+	"version": 6,
+	"configurePresets": [
+		{
+			"name": "linux",
+			"displayName": "Linux tree: server, tests, check",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build/linux-$env{vasal_config}",
+			"cacheVariables": {
+				"CMAKE_C_COMPILER": "gcc",
+				"CMAKE_BUILD_TYPE": "$env{vasal_config}"
+			}
+		},
+		{
+			"name": "web",
+			"displayName": "Web tree: client, editor",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build/web-$env{vasal_config}",
+			"toolchainFile": "$env{emscripten_toolchain}",
+			"cacheVariables": { "CMAKE_BUILD_TYPE": "$env{vasal_config}" }
+		}
+	],
+	"buildPresets": [
+		{ "name": "server", "configurePreset": "linux", "targets": ["server"] },
+		{ "name": "tests", "configurePreset": "linux", "targets": ["tests"] },
+		{ "name": "check", "configurePreset": "linux", "targets": ["check"] },
+		{ "name": "client", "configurePreset": "web", "targets": ["client"] },
+		{ "name": "editor", "configurePreset": "web", "targets": ["editor"] }
+	],
+	"testPresets": [
+		{
+			"name": "tests",
+			"configurePreset": "linux",
+			"output": { "outputOnFailure": true }
+		}
+	],
+	"workflowPresets": [
+		{
+			"name": "server",
+			"steps": [
+				{ "type": "configure", "name": "linux" },
+				{ "type": "build", "name": "server" }
+			]
+		},
+		{
+			"name": "tests",
+			"steps": [
+				{ "type": "configure", "name": "linux" },
+				{ "type": "build", "name": "tests" },
+				{ "type": "test", "name": "tests" }
+			]
+		},
+		{
+			"name": "check",
+			"steps": [
+				{ "type": "configure", "name": "linux" },
+				{ "type": "build", "name": "check" }
+			]
+		},
+		{
+			"name": "client",
+			"steps": [
+				{ "type": "configure", "name": "web" },
+				{ "type": "build", "name": "client" }
+			]
+		},
+		{
+			"name": "editor",
+			"steps": [
+				{ "type": "configure", "name": "web" },
+				{ "type": "build", "name": "editor" }
+			]
+		}
+	]
+}

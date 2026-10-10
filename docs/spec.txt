@@ -1,0 +1,2875 @@
+
+# Vasal specification
+#
+# The single source of truth for what the game and its programs do: every
+# feature, mechanism, rule and corner case, written as stories. Code and
+# tests point at stories and their acceptance criteria by id, and tools
+# check the two against each other.
+#
+# ---- Format ----
+#
+# A story starts with "story <id>" at column 0 and has fields indented by
+# one tab. A field's text continues on lines indented one tab deeper. Lines
+# starting with # are comments; empty lines separate stories. ASCII only,
+# tabs, LF, at most 80 columns (tab width 4).
+#
+#	story <id>
+#		title: <one line>
+#		milestone: <0 to 7, or later>
+#		links: <story ids, separated by spaces>
+#		description: <free text: what and why>
+#		value <name>: <number or open> <unit> [<min>..<max>] [fixed]
+#		criterion <n>: <test> [proposed | open]
+#			given: <the situation>
+#			when: <what happens>
+#			then: <the expected result, in words>
+#			expect: <quantity> <operator> <value>
+#			why: <the reason, when it is not obvious>
+#
+# Ids are lowercase words joined by dots (combat.duel). An id never changes
+# meaning and is never reused. A criterion is referred to as <story id>#<n>
+# (combat.duel#3); its number never changes, new criteria get the next
+# number.
+#
+# links, value and criterion are optional and may repeat (links once).
+# given and when are optional; then is required; expect may repeat.
+#
+# value: a number the story depends on. Its key is <story id>.<name>
+# (combat.strike.parry_chance). "open" means not decided yet; the range
+# is the allowed span. Values are tuning data kept in data files, which are
+# generated from this file; "fixed" values are hard limits, generated into
+# a C header instead. Units: percent, ticks, distance, gold, troops, count.
+#
+# criterion: one acceptance criterion. <test> says how it is checked:
+#	unit         a cairo unit test
+#	scenario     a scripted match with a fixed seed
+#	statistics   a scenario over many seeds, checking a range
+#	fuzz         a fuzz target
+#	lint         a lint check
+#	review       read by a person; only when nothing else works
+# Without a status the criterion is agreed by the user. proposed: written
+# by Claude to close a gap in the design, waiting for the user's decision.
+# open: not decided; the text says what is missing.
+#
+# expect: a result a tool can compare. <quantity> is a dotted name of
+# something a test measures (duel.strikes.average), <operator> is one of
+# = != < <= > >= in ~ (~ means equal within the statistical tolerance of
+# the test), and <value> is a number, a range <min>..<max>, a word
+# (true, false, none) or a value key in braces ({combat.strike.parry_chance}).
+#
+# ---- References from code and tests ----
+#
+# A comment holding "spec:" and ids: "// spec: combat.duel#3 combat.wound".
+# A test names the criteria it checks; code names the stories it
+# implements.
+#
+# ---- Checks (planned tool) ----
+#
+#	- the file parses; ids are unique and well formed
+#	- every link and every "spec:" reference exists
+#	- every agreed criterion, except review, has a test referring to it
+#	- data files and the limits header are generated from the values, so
+#	  code never repeats a number
+
+# ======================================================================
+# Flow: from opening the game back to the main menu
+# ======================================================================
+
+story flow.start
+	title: Opening the game
+	milestone: 5
+	links: client.platform server.web flow.main_menu
+	description: The player opens the game's address in a browser. The
+		page loads the client, which shows a loading screen until it is
+		ready, then the main menu.
+	criterion 1: review
+		when: The player opens the game's address.
+		then: A loading screen shows progress until the client is ready,
+			then the main menu appears.
+	criterion 2: unit proposed
+		when: The client can't reach the server.
+		then: The main menu says the server is unreachable and offers to
+			try again.
+	criterion 3: unit proposed
+		given: A browser tab whose vasal is alive, within the grace period.
+		when: The page is reloaded.
+		then: The client reconnects to that vasal and goes straight to the
+			game, skipping the main menu.
+
+story flow.main_menu
+	title: Main menu
+	milestone: 5
+	links: players.join players.cap match.win
+	description: The main menu holds a name field and the list of
+		alliances, each with its color, name, number of players and cap.
+		The player picks an alliance with room and presses Join. The list
+		updates live while the menu is open.
+	criterion 1: unit
+		then: Join is enabled only with a valid name and an alliance with
+			room selected.
+	criterion 2: unit
+		then: Full alliances are shown as full and can't be selected.
+	criterion 3: scenario proposed
+		given: The main menu open.
+		when: A place frees or fills in an alliance.
+		then: The menu shows the new count within one second.
+	criterion 4: unit proposed
+		then: The client remembers the last name used in the browser and
+			fills it in.
+	criterion 5: review proposed
+		given: A match that has ended and not yet restarted.
+		then: The menu says a new match starts soon and Join is disabled.
+
+story flow.join
+	title: Joining
+	milestone: 5
+	links: players.join players.cap network.protocol
+	description: Pressing Join sends the name and alliance to the server,
+		which accepts or refuses the player.
+	criterion 1: scenario
+		when: The server accepts the join.
+		then: The client shows the match with the camera on the new vasal's
+			centaine.
+	criterion 2: scenario
+		when: The server refuses the join (alliance full, name taken,
+			outdated client, match over).
+		then: The client stays in the main menu and shows the reason; an
+			outdated client asks the player to reload.
+
+story flow.playing
+	title: Playing
+	milestone: 5
+	links: client.render client.hud client.input
+	description: The match view with the map, the HUD and the minimap, as
+		described in the client stories.
+	criterion 1: review
+		then: The player can play using only what the match view shows.
+
+story flow.leave
+	title: Leaving on purpose
+	milestone: 5
+	links: match.disconnect
+	description: The player can leave the match from a menu in the match
+		view.
+	criterion 1: scenario proposed
+		when: The player confirms leaving.
+		then: It counts as a disconnect: the centaine stays for the grace
+			period and can still be attacked, and the player is brought to
+			the main menu.
+		why: Leaving must not be a way to save a centaine from a lost fight.
+	criterion 2: review open
+		then: Whether a player who left can start a new vasal in another
+			alliance while their old centaine is still in its grace period.
+
+story flow.death
+	title: Dying
+	milestone: 5
+	links: players.vasal match.rejoin players.cap
+	description: When the vasal dies, the player sees that their vasal has
+		fallen, with their statistics, and is brought back to the main
+		menu. Their alliance has one player fewer.
+	criterion 1: scenario
+		when: The vasal's last troop dies or deserts.
+		then: The client shows the death message and the vasal's
+			statistics, then the main menu.
+	criterion 2: scenario
+		when: The vasal dies.
+		then: The alliance's player count drops by one in that tick.
+
+story flow.match_over
+	title: The match ends
+	milestone: 5
+	links: match.win match.stats
+	description: When an alliance wins, every player sees the match-over
+		banner with results and statistics, then returns to the main menu.
+	criterion 1: scenario
+		when: An alliance wins.
+		then: Every connected client shows the banner with the results.
+	criterion 2: scenario proposed
+		when: The player closes the banner, or after a while.
+		then: The client returns to the main menu, where joining waits for
+			the next match.
+
+story flow.connection_lost
+	title: Losing the connection
+	milestone: 5
+	links: match.disconnect network.liveness
+	description: When the connection drops during a match, the client tries
+		to reconnect by itself.
+	criterion 1: scenario proposed
+		when: The connection drops.
+		then: The client says it is reconnecting and retries for the whole
+			grace period.
+	criterion 2: scenario
+		when: It reconnects within the grace period.
+		then: The player continues with the same vasal.
+	criterion 3: scenario
+		when: The grace period ends first.
+		then: The client shows that the vasal is gone, then the main menu.
+
+# ======================================================================
+# Players and alliances
+# ======================================================================
+
+story players.join
+	title: Joining a match
+	milestone: 5
+	links: players.alliance match.capacity match.spawn
+		flow.main_menu
+	description: A player enters a name, picks one of the alliances that
+		has room, and joins the running match as a new vasal with a small
+		starting centaine and some gold. There is no matchmaking and no queue.
+		There are no accounts in the first build.
+	value name_length: 16 count fixed
+	criterion 1: scenario
+		given: A running match with room in alliance 2.
+		when: A player joins alliance 2.
+		then: A new vasal of alliance 2 appears with the starting centaine and
+			the starting gold.
+		expect: alliance.2.players = 1
+	criterion 2: unit proposed
+		then: A name is 1 to {players.join.name_length} characters long and
+			holds only letters, digits, spaces, hyphens and underscores,
+			without leading or trailing spaces. Any other name is refused
+			with a message saying why.
+	criterion 3: unit proposed
+		given: A player named "Arn" in the match.
+		when: Another player joins as "arn".
+		then: The name is refused as taken; names are compared without
+			regard to case.
+
+story players.alliance
+	title: Alliances
+	milestone: 5
+	links: combat.enemies capture.requirement economy.payout
+	description: A match has a fixed number of alliances. Members can't
+		attack each other, and their troops count as one side: they pool
+		for captures and fight together. Each player still controls only
+		their own troops, and troops never change owner. Settlements are
+		captured for the alliance, never for one player.
+	value count: open count 2..8
+	criterion 1: unit
+		when: A player orders a vintaine that belongs to another player of
+			the same alliance.
+		then: The order is refused and nothing changes.
+	criterion 2: unit
+		then: No action moves a troop from one player to another.
+	criterion 3: scenario
+		given: Two players of one alliance with troops at a settlement.
+		when: The settlement is captured.
+		then: It belongs to the alliance, not to either player.
+
+story players.cap
+	title: Room in an alliance
+	milestone: 5
+	links: players.alliance match.capacity flow.main_menu flow.death
+	description: The server's only limit on joining is a cap per alliance:
+		the match's player limit divided by the number of alliances,
+		rounded down. A vasal who dies frees their place, so the same player
+		or anyone else can take it.
+	criterion 1: unit
+		given: A player limit of 100 and 4 alliances.
+		then: Each alliance holds at most 25 players.
+		expect: alliance.cap = 25
+	criterion 2: unit
+		given: A player limit of 100 and 3 alliances.
+		then: Each alliance holds at most 33 players; the match at most 99.
+		expect: alliance.cap = 33
+	criterion 3: scenario
+		given: A full alliance.
+		when: A player tries to join it.
+		then: The join is refused as full; the player stays in the main
+			menu and can pick another alliance.
+	criterion 4: scenario
+		given: A full alliance.
+		when: One of its vasals dies.
+		then: The alliance has room for one player at once.
+	criterion 5: scenario
+		given: An alliance with room for one more player.
+		when: Two players join it in the same tick.
+		then: The server takes the join it received first; the other is
+			refused as full.
+	criterion 6: unit proposed
+		given: A disconnected player within the grace period.
+		then: They still hold their place in the alliance.
+		why: Otherwise a reconnecting player could find their own alliance
+			full.
+
+story players.side
+	title: The side choice is locked
+	milestone: 5
+	links: players.vasal match.disconnect
+	description: A player's choice of alliance holds until the
+		vasal dies. Only a new vasal may choose again.
+	criterion 1: unit
+		then: A living vasal can't change alliance.
+	criterion 2: scenario
+		given: A vasal who disconnects and reconnects within the grace
+			period.
+		then: The vasal keeps the same side.
+	criterion 3: scenario
+		given: A dead vasal.
+		when: The player rejoins.
+		then: The player chooses a side again.
+
+story players.vasal
+	title: A vasal lives through their troops
+	milestone: 5
+	links: economy.desertion match.rejoin
+	description: The player is the vasal, a commander who never appears on
+		the map. The vasal is dead the moment their last troop dies or
+		deserts.
+	criterion 1: scenario
+		when: The vasal's last troop is killed.
+		then: The vasal is dead in that tick, and the player is brought back
+			to the main menu.
+	criterion 2: scenario
+		when: The vasal's last troop deserts.
+		then: The vasal is dead, the same as when the last troop is killed.
+	criterion 3: unit proposed
+		when: A vasal dies.
+		then: Their gold is lost, and their capture contributions count as
+			if they had left the match. A rejoining player is a new vasal
+			and inherits nothing.
+	criterion 4: unit proposed
+		then: An empty vintaine has no position on the map and can't be given
+			orders.
+
+# ======================================================================
+# Map
+# ======================================================================
+
+story map.space
+	title: Map space
+	milestone: 1
+	links: map.terrain mapfile.format map.camera
+	description: The map is a 2D grid of square tiles. Distances in this
+		specification are measured in tiles. Positions use fixed-point
+		numbers with a fraction of a tile as their smallest step, so the
+		simulation never needs floating point. The map is huge: it must
+		hold 100 centaines with room to manoeuvre, besides settlements and
+		terrain, so the view is a tiny part of it, likely in the order of
+		500 by 500 to 1000 by 1000 tiles. It must not be so large that
+		players never meet; the spread of spawn areas and settlements
+		decides how often they do.
+	value width: open count
+	value height: open count
+	value max_side: 2048 count fixed
+	value precision: 256 count fixed
+	criterion 1: unit
+		then: A position is stored in 1/{map.space.precision} of a tile, in
+			numbers wide enough for a map of {map.space.max_side} tiles a
+			side.
+	criterion 2: unit
+		then: No troop, NPC or treasure is ever outside the map.
+	criterion 3: unit
+		when: An order targets a position outside the map.
+		then: The order is refused, and the player gets a notice saying
+			why.
+	criterion 4: unit proposed
+		then: A map with a side longer than {map.space.max_side} tiles is
+			refused.
+
+story map.terrain
+	title: Terrain
+	milestone: 1
+	links: vintaines.movement vintaines.pace editor.tools mapfile.format
+	description: Every tile has a terrain type, and terrain decides where
+		troops can go and how fast. Each map defines its own terrain types
+		in the editor, with their values, and stores them in its file: for
+		example forest and water that vintaines can't pass, tall grass
+		that slows them a lot, short grass that slows them a little, and
+		roads at full speed. Decorations (a lone tree, a rock) are only
+		drawn and change nothing.
+	criterion 1: unit
+		then: No troop or NPC ever stands on an impassable tile.
+	criterion 2: scenario
+		when: A vintaine is ordered to an impassable tile or to an area it
+			can't reach.
+		then: It goes to the nearest point it can reach.
+	criterion 3: unit
+		given: A terrain type with a speed of 60 percent.
+		then: A troop crossing it moves at 60 percent of its speed.
+	criterion 4: scenario
+		given: A short way through tall grass and a longer way along a road
+			that takes less time.
+		then: The vintaine takes the road: paths are the fastest, not the
+			shortest.
+	criterion 5: unit
+		then: A map's terrain types, with their passability and speed, are
+			stored in its file; there are no terrain values outside it.
+	criterion 6: unit proposed
+		given: A vintaine in step whose troops stand on different terrain.
+		then: Each troop moves at the vintaine's pace times the speed of
+			the tile it stands on, so the vintaine bunches up in slow
+			ground and stretches out again after it.
+
+story map.camera
+	title: Camera and view
+	milestone: 1
+	links: vintaines.focus map.sight troops.scout client.input
+	description: The game fills the whole browser window. The camera always
+		follows the player's focused vintaine and zooms by itself; the
+		player controls neither, so a player sees only where their troops
+		are. The camera frames the sight of the focused vintaine alone,
+		with a margin of grayed terrain around it, to fit the monitor the
+		browser is on, not the browser window; other selected vintaines
+		change neither where it looks nor its zoom, and the player sees
+		them by moving the focus with Tab. The window shows the middle of
+		that picture: resizing the window crops or reveals around the
+		middle and never rescales what is drawn. When that sight grows,
+		because scouts join, the camera zooms out to keep all of it in the
+		window; when it shrinks, the camera zooms back in. The zoom never
+		frames more than a maximum that is the same for every player.
+		Beyond the player's sight the window shows the terrain grayed and
+		no units (map.sight), so a larger window only shows more gray
+		terrain, which every player knows from the map anyway.
+	value margin: open percent
+	value glide: open ticks
+	value max_frame: open distance
+	criterion 1: unit
+		then: The framed sight, an ellipse in the isometric view, fits
+			the monitor with a margin of {map.camera.margin} percent of
+			grayed terrain, so every player sees the same framing on any
+			monitor of the same shape.
+		why: A larger screen must not reveal more units or frame the sight
+			differently.
+	criterion 2: unit
+		given: A vintaine that gets a scout, whose sight reaches farther
+			than the rest.
+		then: The camera zooms out until the scout's sight is in the
+			window, with the margin.
+	criterion 3: unit
+		given: Several selected vintaines, near each other or not.
+		then: The camera frames the focused vintaine's sight alone: it
+			neither zooms out nor centers between them.
+	criterion 4: unit
+		when: The player adds a vintaine to the selection.
+		then: The camera moves to it, since the last selected vintaine is
+			focused (vintaines.focus).
+	criterion 5: unit
+		then: The camera never frames more than {map.camera.max_frame}
+			tiles across, however far the sight reaches.
+	criterion 6: unit
+		then: The camera stays centered on the focused vintaine as it
+			moves, even at the map's edges, where the window shows a plain
+			dark ground beyond them (the map is a diamond on the screen, so
+			its corners can't fill the window). The player can't move or
+			zoom the camera.
+	criterion 7: unit
+		when: The focus changes to another vintaine.
+		then: The camera glides to it over {map.camera.glide} ticks
+			instead of jumping.
+	criterion 8: review
+		then: The zoom changes smoothly, without jumps, as troops move and
+			the selection changes.
+	criterion 9: unit
+		when: The browser window is resized.
+		then: The scale of what is drawn stays the same; the window shows
+			more or less of the picture around its middle.
+	criterion 10: unit
+		when: The browser window moves to a monitor of another size.
+		then: The picture is scaled for the new monitor.
+	criterion 11: review
+		then: The game is drawn sharp on high-density screens, and the
+			interface (minimap, gold, alerts) stays at the window's edges
+			and corners rather than being cropped with the map.
+
+story map.minimap
+	title: Minimap
+	milestone: 1
+	links: map.sight map.regions
+	description: The minimap shows the whole map. The territory of the
+		player's alliance is drawn in the alliance color, everything else
+		in gray. Troops in the player's sight appear on it. It only shows;
+		clicking it does not move the camera, which always follows the
+		focused vintaine.
+	criterion 1: review
+		then: The minimap shows the whole map with the player's alliance
+			territory in its color and the rest in gray.
+	criterion 2: review proposed
+		then: The player's own vintaines and centenar are always shown on
+			the minimap.
+
+story map.regions
+	title: Territory
+	milestone: 4
+	links: map.minimap
+	description: Each settlement owns the region of tiles closer to it than
+		to any other settlement. Territory of an alliance is the regions of
+		its settlements. Regions are computed once when a map is loaded.
+	criterion 1: unit proposed
+		then: Every passable tile belongs to the region of its nearest
+			settlement; equal distances go to the lower settlement id.
+
+story map.sight
+	title: Sight
+	milestone: 1
+	links: map.minimap map.camera troops.scout network.interest
+		security.visibility
+	description: A player sees only what their troops see. There is no
+		scouting mechanic of its own: every troop sees a circle around it,
+		whose radius depends on its type, and the player's sight is all
+		those circles together. Inside it the player sees the terrain in
+		full color and every troop and NPC, in the main view and on the
+		minimap. Outside it the terrain is still drawn, grayed, and no
+		troops or NPCs are shown. The edge fades softly from color to gray.
+		Settlements are always shown, since the map is known.
+	criterion 1: scenario
+		given: An enemy vintaine just inside the sight of one of the
+			player's troops, and one just outside it.
+		then: The first appears in the player's view and on the minimap,
+			the second in neither.
+	criterion 2: unit
+		given: Two of the player's vintaines far apart.
+		then: Each shows its own sight, and units in either are shown.
+	criterion 3: unit
+		then: Each troop's sight radius is its type's.
+	criterion 4: unit
+		then: Outside the player's sight the terrain is drawn grayed and no
+			troops or NPCs are drawn.
+	criterion 5: review
+		then: The edge of sight fades softly from color to gray.
+	criterion 6: review proposed
+		then: Settlements are shown everywhere, inside sight or not.
+	criterion 7: scenario open
+		then: Whether allies share what their troops see.
+
+story map.contents
+	title: What a map holds
+	milestone: 1
+	links: mapfile.format editor.tools settlements.types npcs.bandits
+	description: A map is the descriptor of everything on it, all set in
+		the editor: its terrain types and the terrain of every tile,
+		settlements of several types (villages, towns, castles, cities and
+		others) with their areas, radii and flags, spawn areas for new
+		vasals, bandit camps and decorations. Caravans travel between the
+		settlements; treasure spawns on free tiles.
+	criterion 1: unit
+		then: A map without at least one settlement and one spawn area is
+			refused.
+
+# ======================================================================
+# Troops
+# ======================================================================
+
+story troops.types
+	title: Troop types
+	milestone: 2
+	links: combat.ranged combat.sidearm
+	description: Melee infantry: spearman, swordsman, battle axe
+		infantry, heavy infantry, light infantry. Ranged: archer, thrower
+		(axe, knife or spear), crossbowman, slinger. Ranged types differ in
+		range and damage. Scouts see farther and move faster but fight
+		poorly (troops.scout). No cavalry or siege units. The first build
+		has the spearman, swordsman, archer, thrower and scout; the others
+		come later. The centenar is a type of its own. Each type's speed,
+		sight, skill, equipment, cost and salary are tuning data.
+	criterion 1: unit proposed
+		then: The first build offers exactly the spearman, swordsman,
+			archer, thrower and scout.
+
+story troops.skill
+	title: Skill
+	milestone: 2
+	links: combat.strike troops.tiers troops.recruit
+	description: Each troop has a skill value that shifts its odds in
+		combat. Skill comes from the troop type, its tier and the place it
+		was recruited.
+	criterion 1: unit
+		then: A troop's skill is the sum of its type's base skill, its
+			tier's bonus and its recruiting place's bonus.
+
+story troops.scout
+	title: Scouts
+	milestone: 2
+	links: map.sight troops.types vintaines.pace map.camera
+	description: Scouts are lightly armed troops who see much farther and
+		move faster than others, but fight poorly. A vintaine with scouts
+		sees more and can move faster at the run, at the cost of fighting
+		power; the player chooses the trade.
+	value sight: open distance
+	criterion 1: unit
+		then: A scout's sight radius is {troops.scout.sight}, larger than
+			that of every other troop type.
+	criterion 2: unit
+		then: A scout is faster than every other troop type.
+	criterion 3: statistics
+		given: Duels between a scout and an equal recruit of any other
+			melee type.
+		then: The scout loses most of them.
+	criterion 4: unit proposed
+		then: A scout fights in melee, with a light weapon and no shield.
+
+story troops.tiers
+	title: Experience tiers
+	milestone: 4
+	links: troops.skill economy.salaries
+	description: Troops start as recruits and can become warriors (a bit
+		better, higher salary) and then veterans (best, highest salary).
+		They earn experience by fighting enemies and surviving; troops
+		that avoid combat gain nothing.
+	value warrior: open count
+	value veteran: open count
+	criterion 1: unit proposed
+		when: A troop kills an enemy troop, player or NPC.
+		then: It gains experience by the type and tier of the troop killed.
+	criterion 2: unit
+		given: A recruit.
+		when: Its experience reaches {troops.tiers.warrior}.
+		then: It becomes a warrior at once, with the warrior skill; its
+			next salary is a warrior's.
+	criterion 3: unit
+		then: A troop never loses a tier.
+	criterion 4: unit
+		given: A troop that never fights.
+		then: It gains no experience.
+
+story troops.recruit
+	title: Recruiting
+	milestone: 4
+	links: settlements.properties economy.gold centaine.size
+	description: Troops are recruited for gold at settlements. Each
+		settlement's flags decide which types it offers; the place also
+		decides their cost, equipment and skill. Troops never go inside a
+		settlement; recruiting only needs a vintaine nearby. New troops join
+		that vintaine as recruits.
+	value distance: open distance
+	criterion 1: scenario
+		given: A vintaine within {troops.recruit.distance} of a settlement
+			that offers spearmen, and enough gold.
+		when: The player recruits 3 spearmen into that vintaine.
+		then: The vintaine gains 3 recruit spearmen at its position, and the
+			cost is taken from the vasal's gold.
+	criterion 2: unit
+		when: The vasal does not have the gold for the whole order.
+		then: Nothing is recruited and no gold is taken.
+	criterion 3: unit
+		when: The order would take the vintaine above its size limit.
+		then: Nothing is recruited.
+	criterion 4: unit proposed
+		then: Recruiting works only at settlements of the player's own
+			alliance.
+	criterion 5: unit proposed
+		then: A vintaine with any troop in combat can't recruit.
+	criterion 6: unit
+		when: A player asks for a type the settlement does not offer.
+		then: The order is refused.
+
+# ======================================================================
+# Centaine, vintaines and leaders
+# ======================================================================
+
+story centaine.size
+	title: A centaine of five vintaines and a centenar
+	milestone: 1
+	links: troops.recruit players.vasal centaine.centenar centaine.transfer
+	description: A vasal's army is a centaine: exactly 5 vintaines of up to
+		20 troops each, plus one centenar who belongs to no vintaine, so at
+		most 101 troops. Vintaines may be empty.
+	value vintaines: 5 count fixed
+	value troops: 20 troops fixed
+	criterion 1: unit
+		then: A vasal always has exactly {centaine.size.vintaines} vintaines.
+	criterion 2: unit
+		then: A vintaine never holds more than {centaine.size.troops} troops.
+	criterion 3: unit
+		then: A centaine never has more than one centenar.
+
+story centaine.transfer
+	title: Moving troops between vintaines
+	milestone: 4
+	links: centaine.size centaine.election combat.engaged vintaines.orders
+	description: After a battle, a vasal can move troops from one vintaine
+		to another, for example to make two complete vintaines out of three
+		weakened ones. The player sets it up in a dialog and confirms. The
+		move is instant: the troops belong to their new vintaines at once,
+		then walk from where they stand to join them. All vintaines
+		involved must be out of combat and near each other.
+	value distance: open distance
+	criterion 1: scenario
+		given: Vintaine 1 with 6 troops and vintaine 2 with 7, both out of
+			combat and within {centaine.transfer.distance} of each other.
+		when: The player moves the 7 troops of vintaine 2 to vintaine 1.
+		then: In the tick the order is applied, vintaine 1 has 13 troops
+			and vintaine 2 none; the moved troops walk to vintaine 1.
+		expect: vintaine.1.troops = 13
+		expect: vintaine.2.troops = 0
+	criterion 2: unit
+		when: A troop of any vintaine involved is in combat.
+		then: The move is refused and nothing changes.
+	criterion 3: unit
+		when: The vintaines involved are farther apart than
+			{centaine.transfer.distance}.
+		then: The move is refused.
+	criterion 4: scenario
+		given: A move applied by the server.
+		when: An enemy attacks one of the vintaines right after.
+		then: The move stands; troops still walking to their new vintaine
+			fight as part of it.
+	criterion 5: unit
+		then: The conditions are checked in the tick the server applies the
+			order; once applied, nothing undoes the move.
+	criterion 6: unit
+		when: A move would take a vintaine above {centaine.size.troops}
+			troops.
+		then: The move is refused.
+	criterion 7: unit
+		then: The centenar can't be moved into a vintaine.
+	criterion 8: unit
+		then: Moved troops keep their type, tier, experience and wounds.
+	criterion 9: unit
+		given: A target vintaine with its own vintenar.
+		when: Troops are moved into it, some of them vintenars of their old
+			vintaines.
+		then: The target's vintenar stays its vintenar, whatever the tiers
+			of the incoming troops; every incoming vintenar becomes an
+			ordinary troop.
+		why: An elected vintenar is never demoted by a merge.
+	criterion 10: unit
+		given: A target vintaine without a vintenar.
+		when: Troops are moved into it, some of them vintenars of their old
+			vintaines.
+		then: Every incoming vintenar becomes an ordinary troop, and the
+			vintaine has no vintenar until it elects one, when the election
+			conditions are met.
+	criterion 11: unit
+		when: A vintenar is moved out of their vintaine.
+		then: The vintaine they left has no vintenar until it elects one.
+	criterion 12: unit proposed
+		when: Troops are moved into an empty vintaine.
+		then: The vintaine forms where they stand, and the distance rule
+			does not apply to it, since an empty vintaine has no position.
+	criterion 13: unit proposed
+		when: A move involves a vintaine that is electing.
+		then: Its election stops, as if it had moved.
+
+story centaine.vintenar
+	title: Vintenars
+	milestone: 4
+	links: centaine.boost centaine.election troops.tiers
+	description: A vintaine can have a vintenar, one of its own troops,
+		chosen by election. A vintenar fights and counts like any other
+		troop, and boosts the troops of their vintaine nearby.
+	criterion 1: unit
+		given: A vintaine electing, whose troops differ in tier and
+			experience.
+		then: The vintenar is the troop with the highest tier, then the
+			most experience, then the lowest troop id.
+	criterion 2: unit proposed
+		given: A vintaine with a vintenar.
+		when: It drops below {centaine.election.troops} troops.
+		then: It keeps its vintenar.
+	criterion 3: review
+		then: Vintenars are marked so every player can tell them apart.
+
+story centaine.centenar
+	title: The centenar
+	milestone: 4
+	links: centaine.boost centaine.pool troops.recruit vintaines.select
+		players.vasal
+	description: The centenar is the 101st troop: the captain of the
+		centaine. They belong to no vintaine and are never elected, only
+		recruited, and only at settlements that have centenars. They are
+		controlled like a vintaine of one, with their own hotkey, orders
+		and mode. They fight, count toward captures and earn a salary
+		like other troops, and boost every troop of the centaine nearby.
+		Every centenar is unique: a melee or ranged fighter with their own
+		name, skill, bonus, cost and salary. Still, a centenar is a person,
+		not a hero: a little better armed, skilled and lucky than a
+		veteran, never more.
+	value skill_margin: open count
+	criterion 1: scenario
+		given: A centaine with a centenar.
+		when: The player selects the centenar and gives a move order.
+		then: The centenar alone moves; the vintaines keep their orders.
+	criterion 2: unit
+		then: The starting centaine includes a centenar.
+	criterion 3: scenario
+		given: A centaine whose centenar died.
+		then: No troop takes their place; the player can recruit a new one
+			at a settlement that has centenars.
+	criterion 4: unit
+		given: A vasal whose centenar is alive.
+		then: The vasal can't recruit another centenar.
+	criterion 5: unit
+		given: A vasal whose vintaines are all empty but whose centenar lives.
+		then: The vasal is alive.
+	criterion 6: review
+		then: The centenar is marked so every player can tell them apart.
+	criterion 7: unit proposed
+		then: Starting centenars come from a separate set of plain starting
+			profiles, unlimited and weaker than the pool's, not from the
+			pool.
+		why: Otherwise the first 100 players would empty the pool at once.
+	criterion 8: unit
+		then: A leader, vintenar or centenar, follows exactly the same
+			combat rules as any troop: the same wounds, hit locations and
+			death. Leaders are people, not heroes.
+	criterion 9: unit
+		then: No centenar profile's skill is more than
+			{centaine.centenar.skill_margin} above a veteran of the same
+			base type.
+
+story centaine.pool
+	title: A limited pool of centenars
+	milestone: 4
+	links: centaine.centenar settlements.properties simulation.random
+	description: The tuning data holds about 100 centenar profiles. At the
+		start of a match, each profile's values are varied a little at
+		random, and the profiles are dealt to the settlements that have
+		centenars. A recruited centenar leaves their settlement's pool, and
+		a dead one is gone for the rest of the match. The pool never
+		refills, so centenars grow scarce later in a match and become a
+		valued resource.
+	value profiles: open count
+	value noise: open percent
+	criterion 1: unit
+		given: The same map and seed.
+		then: Every match deals the same centenars, with the same values,
+			to the same settlements.
+	criterion 2: unit
+		then: Each value of a dealt centenar is within
+			{centaine.pool.noise} percent of its profile's value.
+	criterion 3: unit proposed
+		then: The profiles are dealt as evenly as possible among the
+			settlements that have centenars.
+	criterion 4: scenario
+		when: A centenar is recruited.
+		then: They are no longer offered at that settlement.
+	criterion 5: scenario
+		when: A centenar dies.
+		then: They never appear again in the match.
+	criterion 6: review proposed
+		then: The recruiting screen shows each centenar still offered at the
+			settlement with their name, type, values and price.
+	criterion 7: scenario proposed
+		when: A centenar's vasal is disbanded after a disconnect.
+		then: The centenar is lost, as if they had died.
+
+story centaine.boost
+	title: Leaders boost their troops
+	milestone: 4
+	links: centaine.vintenar centaine.centenar troops.skill combat.strike
+	description: While alive, a vintenar adds a skill bonus to the troops of
+		their own vintaine within a radius, and the centenar adds a skill
+		bonus to every troop of the centaine within a radius. A centenar's
+		bonus and radius come from their profile. The bonuses add up.
+		Leaders never boost themselves, nor allies' troops.
+	value vintenar_bonus: open count
+	value vintenar_radius: open distance
+	criterion 1: unit
+		given: A troop within {centaine.boost.vintenar_radius} of its
+			vintenar.
+		then: Its skill rises by {centaine.boost.vintenar_bonus}.
+	criterion 2: unit
+		given: A troop just outside that radius.
+		then: It gets no bonus from its vintenar.
+	criterion 3: unit
+		given: A troop of the centaine within the centenar's radius.
+		then: Its skill rises by the centenar's bonus, on top of any
+			vintenar bonus.
+	criterion 4: unit
+		then: A vintenar does not boost troops of other vintaines, and no
+			leader boosts troops of another vasal, allies included.
+	criterion 5: unit
+		then: A leader does not boost themselves.
+	criterion 6: unit
+		when: A leader dies.
+		then: Their bonus ends in the same tick.
+
+story centaine.election
+	title: Electing vintenars
+	milestone: 4
+	links: centaine.vintenar combat.engaged capture.progress
+	description: A vintaine without a vintenar elects one when it has at
+		least 11 troops (10 and their vintenar), none of them in combat,
+		and it stands still. The election takes 5 seconds, shown by an icon
+		and a timer above the vintaine, much like a capture.
+	value troops: 11 troops
+	value time: 100 ticks
+	criterion 1: scenario
+		given: A vintaine of 12 troops without a vintenar, standing still
+			and out of combat.
+		then: After {centaine.election.time} ticks it has a vintenar.
+	criterion 2: unit
+		given: A vintaine of 10 troops without a vintenar.
+		then: It does not elect.
+	criterion 3: scenario
+		given: A vintaine electing.
+		when: One of its troops enters combat, or the vintaine moves.
+		then: The election stops.
+	criterion 4: unit proposed
+		when: An election stops before it completes.
+		then: Its timer goes back to zero; the next election starts over.
+	criterion 5: unit proposed
+		when: A vasal spawns.
+		then: Every vintaine with at least {centaine.election.troops}
+			troops already has a vintenar.
+	criterion 6: unit
+		then: A vintenar who deserts is replaced like one who dies.
+	criterion 7: review proposed
+		then: Every player who can see the vintaine sees the election icon
+			and timer.
+
+# ======================================================================
+# Vintaines and orders
+# ======================================================================
+
+story vintaines.select
+	title: Selecting vintaines
+	milestone: 1
+	links: vintaines.focus map.camera client.input
+	value double_tap: open ticks
+	description: The keys 1 to 5 select a vintaine and 6 the centenar; with
+		shift held they add it to the selection, or remove it if it is
+		already selected, so a player can select one vintaine or several.
+		Orders go to every selected vintaine. Selecting does not change
+		what a vintaine is doing. (The selection and order controls borrow
+		from Mount and Blade II: Bannerlord.)
+	criterion 1: unit
+		when: The player presses the key of vintaine 3.
+		then: Vintaine 3 alone is selected and focused.
+	criterion 2: unit
+		when: The player holds shift and presses the key of vintaine 4.
+		then: Vintaine 4 is added to the selection if it was not in it, and
+			removed from it if it was.
+	criterion 3: unit
+		when: A vintaine is selected or unselected.
+		then: Its current order does not change.
+	criterion 4: unit
+		then: An empty vintaine can't be selected.
+	criterion 5: unit
+		when: The player presses 6.
+		then: The centenar is selected like a vintaine.
+	criterion 6: review
+		when: The player clicks one of their own troops.
+		then: Nothing is selected: vintaines are selected only with the
+			keys, and focused only with Tab.
+	criterion 7: unit proposed
+		when: The player removes the focused vintaine from the selection.
+		then: The focus moves to the next selected vintaine, as when the
+			focused vintaine is emptied.
+	criterion 8: unit
+		when: The player presses a vintaine's key twice within
+			{vintaines.select.double_tap} ticks.
+		then: Every vintaine with troops is selected, the centenar too
+			(proposed), and the focus is on the vintaine whose key was
+			pressed.
+
+story vintaines.focus
+	title: The focused vintaine
+	milestone: 1
+	links: vintaines.select map.camera
+	description: Of the selected vintaines (or the centenar), one is
+		focused, and the camera follows it. Tab moves the focus to the next
+		selected vintaine; it changes neither the selection nor any order.
+		Where the focus goes when its vintaine is emptied is a rule that
+		will likely change, so the code keeps it in one place.
+	criterion 1: unit
+		given: Vintaines 1, 3 and 4 selected, vintaine 3 focused.
+		when: The player presses Tab.
+		then: Vintaine 4 is focused; the selection is unchanged.
+	criterion 2: unit
+		given: Vintaines 1, 3 and 4 selected, vintaine 4 focused.
+		when: The player presses Tab.
+		then: Vintaine 1 is focused, starting over in the order of the
+			keys, with the centenar last.
+	criterion 3: unit
+		when: The player adds a vintaine to the selection with shift and
+			its key.
+		then: The added vintaine is focused, so the camera moves to the
+			last selected vintaine.
+	criterion 4: unit
+		when: The focused vintaine loses its last troop.
+		then: It leaves the selection and the focus moves to the next
+			selected vintaine; when none is left, to the first vintaine
+			with troops, or else the centenar.
+	criterion 5: unit
+		when: The player unselects everything.
+		then: The focus, and the camera, stay on the last focused vintaine.
+	criterion 6: review
+		then: The rule of where the focus goes is one function in the
+			code, so changing it touches nothing else.
+
+story vintaines.orders
+	title: Orders
+	milestone: 1
+	links: vintaines.modes vintaines.pace combat.disengage
+		security.validation
+	description: Orders apply only to the selected vintaines, and a new
+		order replaces the vintaine's current one, unless it is queued
+		(vintaines.queue). Vintaines that are not
+		selected keep carrying out their last order. Orders are: move to a
+		point, attack in a direction (vintaines.attacks), set a mode or
+		pace, and recruit.
+	criterion 1: scenario
+		given: Vintaines 1 and 2 moving; only vintaine 1 selected.
+		when: The player gives a move order.
+		then: Vintaine 1 follows the new order; vintaine 2 keeps its old one.
+	criterion 2: unit
+		when: The player right-clicks the map with vintaines selected.
+		then: They get an order of the current action (see
+			vintaines.actions) toward that point; at first the action is
+			move.
+	criterion 3: scenario
+		given: Several vintaines ordered to the same point.
+		then: Each forms a roughly round group around its own spot next to
+			the point; their troops don't stack on each other. There are no
+			lines, squares or other formations in the first build.
+	criterion 4: unit
+		when: An order names a vintaine the player doesn't own, or anything
+			else invalid.
+		then: It is refused.
+
+story vintaines.queue
+	title: Queued orders
+	milestone: 1
+	links: vintaines.orders vintaines.actions vintaines.attacks
+		client.render security.limits
+	description: Holding shift while giving an order (a right-click or a
+		choice on the wheel) queues it: it is carried out after the orders
+		already queued, instead of replacing them. Without shift, an order
+		replaces the current order and the whole queue. So a player can
+		send a vintaine along a way of their choosing, or make it move and
+		then attack. Many RTS games do the same.
+	value length: open count
+	criterion 1: unit
+		given: A vintaine moving to a point.
+		when: The player gives it a move order to another point, without
+			shift.
+		then: The first order is dropped and the vintaine goes straight to
+			the second point.
+	criterion 2: unit
+		given: A vintaine with no orders.
+		when: The player gives it a move order, then, holding shift,
+			another move order.
+		then: It goes to the first point, then on to the second.
+	criterion 3: unit
+		given: A vintaine with queued orders.
+		when: The player gives it an order without shift.
+		then: The current order and every queued one are dropped, and the
+			new order is carried out at once.
+	criterion 4: unit
+		given: Several selected vintaines.
+		when: The player queues an order.
+		then: It is added to the queue of each of them.
+	criterion 5: unit
+		when: The player queues an order on an idle vintaine.
+		then: It is carried out at once, as if shift were not held.
+	criterion 6: unit
+		then: A queue holds at most {vintaines.queue.length} orders; an
+			order beyond that is refused with a notice.
+	criterion 7: review
+		then: The selected vintaines show their queued orders as a line
+			from point to point.
+	criterion 8: unit proposed
+		then: Setting a pace or a mode takes effect at once and does not
+			touch the queue.
+	criterion 9: unit
+		given: Shift held throughout.
+		when: The player selects vintaine 1, gives 2 move orders, adds
+			vintaine 2 to the selection, and gives 3 more move orders.
+		then: Vintaine 1 has 5 moves (the current one and 4 queued) and
+			vintaine 2 has 3 (the current one and 2 queued): shift both
+			adds to the selection and queues, and each vintaine's queue is
+			its own.
+
+story vintaines.attacks
+	title: Directional attacks
+	milestone: 2
+	links: vintaines.orders vintaines.actions combat.duel
+	description: Attacks are directional, unlike in most strategy games:
+		the player does not pick an enemy vintaine but points the way, and
+		the troops attack in that direction. They come with combat; until
+		then, the attack actions only tell the player they are not
+		available yet.
+	criterion 1: unit
+		then: An attack order holds a direction, never a target. Clicking
+			on an enemy gives the direction toward it, the same as clicking
+			beyond it.
+	criterion 2: scenario
+		then: An attack can go up to the clicked point, or carry on beyond
+			it; the player picks which with the action (vintaines.actions).
+	criterion 3: scenario
+		given: A vintaine carrying out an attack order.
+		when: No enemy is left in sight.
+		then: It stops and stands idle. (Later, modes may make it act:
+			an aggressive vintaine attacks new enemies in sight, a defending
+			one returns to its post.)
+	criterion 4: scenario open
+		then: How far an attack beyond the point goes when it meets no
+			enemy, and whether a vintaine's mode changes it.
+
+story vintaines.actions
+	title: The action wheel
+	milestone: 1
+	links: vintaines.orders client.input
+	description: A right-click gives the selected vintaines an order of
+		the current action toward the clicked point. Holding the right
+		button down instead opens a wheel of actions around the pointer,
+		such as move, attack up to the point and attack beyond the point;
+		releasing the button over one picks it and gives that order. The
+		action picked becomes the current one, so a plain right-click
+		repeats it. The most common actions also have keys.
+	value hold: open ticks
+	criterion 1: unit
+		when: The player presses and releases the right button within
+			{vintaines.actions.hold} ticks.
+		then: The selected vintaines get an order of the current action.
+	criterion 2: unit
+		when: The player holds the right button for longer.
+		then: The wheel opens around the pointer and no order is given yet.
+	criterion 3: unit
+		when: The player releases the button over an action on the wheel.
+		then: The selected vintaines get that order toward the point where
+			the wheel was opened, and it becomes the current action.
+	criterion 4: unit
+		when: The player releases the button away from every action.
+		then: No order is given and the current action stays as it was.
+	criterion 5: unit proposed
+		when: The player presses the key of an action.
+		then: It becomes the current action.
+	criterion 6: review open
+		then: The actions on the wheel, and which of them get keys.
+	criterion 7: review open
+		then: Whether a left click on the map, which selects nothing,
+			opens the wheel when something is selected (an idea of the
+			user's, not decided).
+
+story vintaines.modes
+	title: Vintaine modes
+	milestone: 2
+	links: combat.duel combat.ranged combat.disengage capture.defend
+	description: A vintaine's mode decides when it is willing to fight. Its
+		post is the point of its last move order, or where it stood when it
+		got the mode. Aggressive: attacks any enemy it sees. Guard:
+		engages any enemy entering a radius around its post, then returns
+		to the post. Defensive: fights only when attacked, then returns to
+		its post. Flee: runs from attackers.
+	value sight: open distance
+	value guard_radius: open distance
+	criterion 1: scenario
+		given: An aggressive vintaine and an enemy within
+			{vintaines.modes.sight}.
+		then: The vintaine attacks it.
+	criterion 2: scenario
+		given: A guarding vintaine.
+		when: An enemy comes within {vintaines.modes.guard_radius} of its
+			post.
+		then: The vintaine engages it, and returns to its post after the
+			fight.
+	criterion 3: scenario proposed
+		given: A guarding vintaine chasing an enemy.
+		when: The enemy leaves the guard radius.
+		then: The vintaine stops chasing and returns to its post.
+	criterion 4: scenario
+		given: A defensive vintaine.
+		when: An enemy passes by without attacking.
+		then: The vintaine does nothing.
+	criterion 5: scenario proposed
+		given: A defensive vintaine.
+		when: An enemy duels or shoots at one of its troops.
+		then: The whole vintaine fights that enemy's vintaine, then returns to
+			its post.
+	criterion 6: scenario proposed
+		given: A fleeing vintaine.
+		when: Enemies come within {vintaines.modes.sight}.
+		then: Its troops not in a duel run directly away from them, along
+			the map edge if needed, until no enemy is in sight. It never
+			fires.
+	criterion 7: scenario proposed
+		given: An aggressive vintaine under a move order.
+		when: An enemy comes into sight.
+		then: It stops to attack, and resumes the move after the fight.
+	criterion 8: unit proposed
+		then: A new vintaine starts in defensive mode.
+
+story vintaines.alerts
+	title: Alerts
+	milestone: 2
+	links: combat.engaged client.hud
+	description: The player gets an alert when any of their vintaines
+		engages or is attacked.
+	value repeat: open ticks
+	criterion 1: scenario
+		when: One of the player's vintaines is attacked.
+		then: An alert names the vintaine.
+	criterion 2: unit proposed
+		then: The same vintaine raises no new alert within
+			{vintaines.alerts.repeat} ticks of the last one.
+	criterion 3: unit proposed
+		when: The player clicks an alert.
+		then: The vintaine alone is selected and focused.
+
+story vintaines.movement
+	title: Movement and formation
+	milestone: 1
+	links: map.terrain vintaines.pace simulation.performance
+	description: Each vintaine is pathed once per order; its troops keep
+		their places in a roughly round group around the vintaine's
+		position. The map is too large for a plain search over every tile,
+		so paths are planned in two levels: first over regions of the map,
+		then over the tiles near the vintaine.
+	value region: open count
+	criterion 1: scenario
+		when: A vintaine is ordered across the map around water.
+		then: It arrives by a path that never crosses impassable tiles.
+	criterion 2: unit
+		then: Troops of one vintaine keep their spacing. Troops of
+			different vintaines may overlap.
+		why: Collision between all 10,000 units is costly and gains little
+			for a game about vintaines.
+	criterion 3: statistics proposed
+		given: A map of {map.space.max_side} tiles a side.
+		then: A path from one corner to the other is found within the
+			tick budget of a single tick.
+	criterion 4: unit proposed
+		then: A path planned in two levels takes at most a few percent
+			longer to walk than the best path.
+
+story vintaines.pace
+	title: Marching pace
+	milestone: 1
+	links: vintaines.movement vintaines.modes
+	description: Besides its combat mode, every vintaine has a pace set by
+		the player. In step, the whole vintaine marches at the speed of its
+		slowest troop and stays together. At the run, every troop moves as
+		fast as it can; the fast ones arrive first and the slow ones catch
+		up.
+	criterion 1: unit
+		given: A vintaine in step.
+		then: Every troop moves at the speed of the slowest troop.
+	criterion 2: scenario
+		given: A vintaine at the run, with troops of different speeds.
+		then: Every troop moves at its own speed, and the vintaine forms up
+			again once the last troop arrives.
+	criterion 3: unit proposed
+		then: A new vintaine marches in step.
+
+
+# ======================================================================
+# Combat
+# ======================================================================
+
+story combat.random
+	title: Combat rolls are seeded
+	milestone: 2
+	links: simulation.random
+	description: Combat is rolling dice. Every roll comes from the match's
+		combat random stream, so a test that fixes the match seed replays
+		combat exactly, and production matches stay unpredictable because
+		their seed comes from the operating system.
+	criterion 1: unit
+		then: Every combat roll is drawn from the combat stream and from no
+			other source.
+	criterion 2: scenario
+		given: The same battle scenario run twice with the same seed.
+		then: Both runs produce identical event logs.
+		expect: run.event_log.equal = true
+
+story combat.enemies
+	title: Who fights whom
+	milestone: 2
+	links: players.alliance npcs.bandits npcs.caravans
+	description: Troops of another alliance are enemies. Bandits and
+		caravan guards are enemies of every player.
+	criterion 1: unit
+		given: Two troops of the same alliance, owned by different players,
+			side by side.
+		then: They never start a duel with, fire at or damage each other.
+		expect: duels.started = 0
+		expect: shots.fired = 0
+	criterion 2: unit
+		given: A bandit next to troops of two alliances.
+		then: The bandit is an enemy of both.
+
+story combat.tick
+	title: Attacks in one tick happen together
+	milestone: 2
+	links: simulation.tick
+	description: All attacks within one tick are resolved against the
+		state at the start of the tick, and their results apply together
+		at the end of it. Resolving them one by one in id order would
+		quietly favor troops with lower ids.
+	criterion 1: scenario proposed
+		given: Two archers in range of each other, both ready to fire.
+		when: Both fire in the same tick and both shots kill.
+		then: Both die, and each owner is credited with one kill.
+		expect: troops.alive = 0
+		expect: kills.credited = 2
+
+story combat.duel
+	title: Melee is a series of one-on-one duels
+	milestone: 2
+	links: vintaines.modes combat.strike combat.sidearm
+	description: When a melee troop that is willing to fight comes within
+		combat distance of an enemy, the two lock into a duel. Whether a
+		troop is willing to fight depends on its vintaine's mode and order.
+		A duel lasts until one of the troops dies or leaves the match.
+	value distance: open distance
+	criterion 1: scenario
+		given: A willing spearman walks toward an enemy swordsman, neither in
+			a duel.
+		when: The distance between them drops to {combat.duel.distance}.
+		then: A duel starts in that tick.
+	criterion 2: scenario
+		given: Three enemy spearmen reach one swordsman in the same tick.
+		then: One of them duels the swordsman; the other two look for other
+			enemies. A troop is never in more than one duel.
+		expect: duels.started = 1
+	criterion 3: unit proposed
+		given: Several duels could start in the same tick.
+		then: Pairs with the shortest distance are formed first; equal
+			distances go to the lower troop id.
+	criterion 4: scenario proposed
+		given: An archer and an enemy archer standing within combat distance.
+		then: No duel starts; ranged troops never start duels, they only
+			duel when a melee troop engages them.
+		expect: duels.started = 0
+	criterion 5: scenario
+		then: Neither troop moves while in a duel.
+	criterion 6: scenario
+		when: One troop of a duel dies or leaves the match.
+		then: The duel ends, and the other troop follows its vintaine's current
+			order from the next tick.
+
+story combat.strike
+	title: Strikes, parries and hit locations
+	milestone: 2
+	links: combat.duel combat.wound
+	description: When a duel starts, a roll decides who strikes first.
+		The troops then strike in turn. On each strike the defender rolls
+		to parry; a parried strike does nothing. A strike that lands rolls
+		a hit location: some locations kill, others wound. Every roll is
+		weighted by the skill and equipment of both troops. Fights should
+		be short: two equal troops need 2 to 3 strikes on average.
+	value interval: open ticks
+	value parry_chance: open percent 30..45
+	value hit_locations: open percent
+	criterion 1: statistics
+		given: Duels between two equal troops.
+		then: Each troop strikes first in about half of them.
+		expect: duel.first_strike.share in 45..55
+	criterion 2: statistics
+		given: Duels between a troop of higher skill and an equal troop
+			otherwise.
+		then: The skilled troop strikes first, parries and wins more often
+			than half the time.
+	criterion 3: statistics
+		given: Duels between two equal troops.
+		then: Strikes are parried at the parry chance.
+		expect: strike.parried.share ~ {combat.strike.parry_chance}
+	criterion 4: scenario
+		then: The troops strike in turn, one strike every
+			{combat.strike.interval} ticks, whether the previous strike
+			landed or not.
+	criterion 5: statistics
+		given: A strike that lands.
+		then: The hit location follows the chances in
+			{combat.strike.hit_locations}; a killing location kills, any
+			other location wounds.
+	criterion 6: statistics
+		given: Duels between two equal troops.
+		then: A duel lasts 2 to 3 strikes on average.
+		expect: duel.strikes.average in 2..3
+
+story combat.wound
+	title: Wounds
+	milestone: 2
+	links: combat.strike combat.ranged
+	description: A hit that does not kill wounds. A troop holds at most
+		one wound, and a second wound kills it, whichever location is hit.
+	criterion 1: unit
+		given: A wounded troop.
+		when: A strike or shot wounds it again.
+		then: The troop dies.
+	criterion 2: scenario proposed
+		given: A wounded troop that wins its duel.
+		then: It stays wounded. Nothing heals a wound in the first build;
+			healing is a later idea (the heal gem).
+	criterion 3: unit proposed
+		then: A wound does not change a troop's skill or odds.
+
+story combat.ranged
+	title: Ranged fire
+	milestone: 2
+	links: combat.wound combat.sidearm vintaines.modes
+	description: Ranged troops fire at enemies within range. Each shot
+		rolls to hit, weighted by the shooter's skill. A shot can't be
+		parried, but the target can roll to block it. A shot that is
+		not blocked rolls a hit location, as in melee. Ranged types differ
+		in range and damage.
+	value range: open distance
+	value reload: open ticks
+	value block_chance: open percent
+	criterion 1: unit proposed
+		given: A willing ranged troop, not in a duel, with several enemies
+			within range.
+		then: It fires at the nearest one; equal distances go to the lower
+			troop id.
+	criterion 2: scenario
+		then: A ranged troop fires at most once every
+			{combat.ranged.reload} ticks.
+	criterion 3: statistics proposed
+		given: Shots fired from different distances within range.
+		then: The chance to hit depends on the shooter's skill only, not on
+			the distance.
+	criterion 4: statistics
+		given: Shots that hit.
+		then: The target blocks them at the block chance; those not blocked
+			roll a hit location.
+		expect: shot.blocked.share ~ {combat.ranged.block_chance}
+	criterion 5: unit proposed
+		then: A shot is resolved in the tick it is fired; its flight is
+			only drawn by the client, so a moving target can't dodge it.
+	criterion 6: scenario proposed
+		given: An enemy troop in a duel within range.
+		then: Ranged troops may fire at it.
+	criterion 7: review proposed
+		then: Ranged troops have unlimited ammunition.
+	criterion 8: scenario open
+		then: Whether a ranged troop can fire while its vintaine is moving.
+
+story combat.sidearm
+	title: Ranged troops caught in melee
+	milestone: 2
+	links: combat.duel combat.ranged
+	description: A ranged troop engaged by a melee troop stops firing and
+		duels with a sidearm (dagger or small axe) at heavily reduced odds,
+		since it has no armor or proper melee weapon. A ranged vintaine caught
+		by melee troops is usually lost.
+	value penalty: open percent
+	criterion 1: scenario
+		given: An archer engaged in a duel.
+		then: It fires no shots until the duel ends.
+		expect: shots.fired = 0
+	criterion 2: statistics
+		given: Duels between an archer and an equal-skill spearman.
+		then: The archer's first strike, strike and parry chances are
+			reduced by {combat.sidearm.penalty}, and it loses most duels.
+
+story combat.engaged
+	title: Being in combat
+	milestone: 2
+	links: capture.requirement vintaines.alerts
+	description: Capturing counts only troops that are not in combat. A
+		troop is in combat while it is in a duel, and for a short time
+		after it last fired a shot or was targeted by one.
+	value linger: open ticks
+	criterion 1: unit
+		given: A troop in a duel.
+		then: It is in combat.
+	criterion 2: unit
+		given: A troop that fired a shot or was targeted by one.
+		then: It is in combat for {combat.engaged.linger} ticks after that,
+			then no longer.
+
+story combat.credit
+	title: Who gets credit for a kill
+	milestone: 2
+	links: economy.kills
+	description: Kills earn gold. The credit goes to the player who owns
+		the troop that dealt the killing strike or shot.
+	criterion 1: unit
+		given: A troop wounded by one player's troop.
+		when: Another player's troop kills it.
+		then: The second player gets the credit.
+	criterion 2: unit proposed
+		when: An NPC kills a player's troop.
+		then: No player gets credit.
+	criterion 3: scenario proposed
+		given: A troop in a duel.
+		when: It deserts or its centaine is disbanded.
+		then: It leaves without being killed, and nobody gets credit, not
+			even its duel partner.
+		expect: kills.credited = 0
+
+story combat.disengage
+	title: Fights are a commitment
+	milestone: 2
+	links: combat.duel vintaines.modes
+	description: A move or retreat order given during a fight does not
+		break existing duels. Troops in a duel must finish it; troops not
+		in a duel start moving at once.
+	criterion 1: scenario
+		given: A vintaine with some troops in duels.
+		when: The vintaine gets a move order.
+		then: Its troops not in a duel start moving in the same tick; the
+			others finish their duels, then follow the order.
+	criterion 2: scenario proposed
+		given: A vintaine in flee mode with some troops in duels.
+		then: Only the troops not in a duel run.
+
+story combat.other
+	title: Combat in special situations
+	milestone: 5
+	links: match.disconnect match.win npcs.bandits
+	description: Combat continues by the same rules when a player
+		disconnects, stops when the match ends, and applies to NPCs too.
+	criterion 1: scenario
+		given: A player whose troops are fighting.
+		when: The player disconnects.
+		then: The troops keep fighting by the same rules.
+	criterion 2: scenario
+		when: The match ends.
+		then: All duels end and no more combat rolls are made.
+		expect: combat.rolls.after_end = 0
+	criterion 3: scenario proposed
+		then: NPC troops follow the same combat rules as player troops.
+
+story combat.balance
+	title: Numbers decide big fights
+	milestone: 4
+	links: centaine.boost centaine.centenar troops.tiers testing.duels
+	description: This is a medieval game: masses usually prevail, unless
+		players outwit the enemy. Leaders and experience help, but their
+		bonuses stay small enough that they never decide a large battle on
+		their own. These criteria guard that when values are tuned.
+	value outnumbered_win: open percent
+	criterion 1: statistics
+		given: 20 recruits without leaders against 15 equal recruits with a
+			vintenar and a centenar, both boosting.
+		then: The 20 win most fights.
+		expect: fight.larger.win_share >= {combat.balance.outnumbered_win}
+	criterion 2: statistics
+		given: 15 recruits with a vintenar and a centenar against 15 equal
+			recruits without leaders.
+		then: The led side wins more often than not, but not overwhelmingly.
+		expect: fight.led.win_share in 50..75
+	criterion 3: review open
+		then: The target share for outnumbered fights, and whether 50..75 is
+			the right span for led fights; set while tuning combat.
+
+# ======================================================================
+# Settlements and capture
+# ======================================================================
+
+story settlements.types
+	title: Settlement types
+	milestone: 4
+	links: capture.requirement economy.capture_bonus settlements.properties
+		client.render simulation.random
+	description: Villages, towns, castles, cities and possibly others.
+		Each type has a troop requirement, a capture time, a capture area
+		radius, a capture bonus and an income for the payout. These are
+		the defaults a settlement of the type starts with in the editor,
+		which can change them for each settlement. Settlements have no
+		garrisons or defenders, and troops never enter them.
+	criterion 1: unit
+		when: A settlement is placed in the editor.
+		then: It starts with its type's values.
+	criterion 2: review open
+		then: The full list of settlement types and their default values.
+	criterion 3: unit
+		then: Each settlement type has several sprites. Which one a
+			settlement shows is drawn from the match's seed and the
+			settlement (simulation.random), so every player of a match sees
+			the same, neighbouring settlements differ, and another match on
+			the same map may look different.
+
+story settlements.properties
+	title: What each settlement offers
+	milestone: 4
+	links: editor.tools troops.recruit centaine.pool mapfile.format
+	description: Every settlement on a map has a type, a name, its own
+		values (troop requirement, capture time, capture area radius,
+		bonus, income) and flags, all set in the editor: which troop types
+		can be recruited there and whether it has centenars. Different
+		settlements of the same type can offer different things, which
+		makes some of them worth more to hold.
+	criterion 1: unit
+		given: A map where one village offers archers and another does not.
+		then: Archers can be recruited only at the first.
+	criterion 2: unit
+		then: Centenars can be recruited only at settlements flagged for
+			them.
+	criterion 3: unit
+		given: Two towns whose capture radius was set differently in the
+			editor.
+		then: Each uses its own radius.
+	criterion 4: unit
+		then: The values and flags are saved in the map file and survive
+			saving and opening it again.
+	criterion 5: review open
+		then: Which other flags settlements need.
+
+story capture.requirement
+	title: Who counts toward a capture
+	milestone: 4
+	links: combat.engaged players.alliance settlements.types
+	description: A side counts the troops inside a settlement's capture
+		area that are not in combat. Troops of all players in one alliance
+		count together. A side qualifies when it has at least the
+		settlement type's troop requirement.
+	criterion 1: scenario
+		given: A settlement requiring 10 troops, and 6 troops each of two
+			players of one alliance in its area.
+		then: The alliance qualifies.
+	criterion 2: scenario
+		given: An alliance with 10 troops in the area, 3 of them in duels,
+			at a settlement requiring 10.
+		then: It does not qualify.
+	criterion 3: unit proposed
+		then: NPC troops never count, qualify or contest.
+
+story capture.progress
+	title: Capturing
+	milestone: 4
+	links: capture.decay capture.contest economy.capture_bonus
+	description: A side that is the only one to qualify at a settlement it
+		does not own makes the capture timer grow by one tick per tick.
+		When the timer reaches the type's capture time, the settlement
+		becomes the side's, the timer goes back to zero, the capture bonus
+		is paid and the participants are recorded.
+	criterion 1: scenario
+		given: A settlement with a capture time of 200 ticks.
+		when: One side qualifies alone for 200 ticks.
+		then: The settlement becomes that side's in tick 200.
+		expect: settlement.owner = side
+	criterion 2: unit proposed
+		then: The participants of a capture are the players with at least
+			one counting troop in the area in the tick it completes.
+	criterion 3: unit
+		then: A side can't capture a settlement it already owns.
+	criterion 4: scenario proposed
+		given: Side A has a capture timer running.
+		when: Side B starts to qualify alone.
+		then: The timer decays as if contested; when it reaches zero, B's
+			capture starts from zero.
+
+story capture.decay
+	title: Capture decay
+	milestone: 4
+	links: capture.progress
+	description: When the capturing side stops qualifying, for example
+		because defenders engage it, the timer decays smoothly toward
+		zero. If the side qualifies again before it reaches zero, the
+		timer resumes from its current value.
+	value rate: open ticks
+	criterion 1: scenario
+		given: A capture timer at 150.
+		when: The side stops qualifying for 50 ticks, then qualifies again.
+		then: The timer resumes from 150 minus 50 times
+			{capture.decay.rate}, not from zero.
+	criterion 2: unit
+		then: The timer never goes below zero.
+
+story capture.contest
+	title: Contested captures
+	milestone: 4
+	links: capture.progress capture.requirement
+	description: If two or more sides qualify at once, the capture is
+		contested: the timer decays and a clear visual shows that the
+		capture is blocked. Once only one side qualifies, it can capture
+		again. Troops left out of a fight still count, so an alliance can
+		capture while its other vintaines hold the enemy off.
+	criterion 1: scenario
+		given: Two alliances each qualifying at a neutral settlement.
+		then: The timer decays and the settlement shows as contested.
+	criterion 2: scenario proposed
+		given: An enemy capturing a settlement.
+		when: The owner's troops in the area also meet the requirement.
+		then: The capture is contested.
+	criterion 3: scenario
+		given: An alliance with 15 troops at a settlement requiring 10, of
+			which 4 are in duels with defenders.
+		then: It still qualifies with the 11 others and keeps capturing.
+
+story capture.defend
+	title: Defending
+	milestone: 4
+	links: vintaines.modes capture.requirement
+	description: There are no garrisons. A settlement is defended by
+		posting vintaines near it in guard mode, so they engage attackers and
+		stop their troops from counting.
+	criterion 1: scenario
+		given: A guarding vintaine posted at a settlement.
+		when: An enemy vintaine arrives to capture it.
+		then: The guards engage, the attackers in duels stop counting, and
+			the capture stalls.
+
+story capture.bar
+	title: Capture bar
+	milestone: 4
+	links: client.render
+	description: A capture bar above the settlement shows the progress to
+		every player who can see the settlement, and whether it is
+		contested.
+	criterion 1: review
+		then: The bar shows the timer's share of the capture time, the
+			capturing side's color, and a blocked sign when contested.
+
+story capture.ownership
+	title: Settlements after their capturers are gone
+	milestone: 5
+	links: match.disconnect
+	description: Settlements stay with the alliance when the capturing
+		players leave or die.
+	criterion 1: scenario
+		given: A settlement captured by one player.
+		when: That player leaves the match.
+		then: The settlement still belongs to the alliance.
+
+# ======================================================================
+# Economy
+# ======================================================================
+
+story economy.gold
+	title: Gold
+	milestone: 4
+	links: economy.kills economy.payout economy.salaries
+	description: Gold is the only currency. Each vasal has their own gold,
+		a whole number that is never negative. Vasals earn it from combat,
+		loot and payouts, and spend it on recruiting and salaries. Gold
+		can't be given to other players.
+	criterion 1: unit
+		then: A vasal's gold is never negative.
+	criterion 2: unit proposed
+		then: No action moves gold between players.
+
+story economy.kills
+	title: Gold for kills
+	milestone: 4
+	links: combat.credit
+	description: The player credited with a kill earns gold by the type
+		and tier of the troop killed, NPCs included. This works in any
+		fight, with any number of players.
+	criterion 1: unit
+		when: A player's troop kills an enemy veteran swordsman.
+		then: The player gets the gold set for a veteran swordsman, in the
+			same tick.
+
+story economy.capture_bonus
+	title: Capture bonus
+	milestone: 4
+	links: capture.progress settlements.types
+	description: When a capture completes, its participants share the
+		settlement type's capture bonus.
+	criterion 1: unit proposed
+		given: A bonus of 100 gold and 3 participants.
+		then: Each gets 33 gold; the rest is lost.
+
+story economy.payout
+	title: Alliance payout
+	milestone: 5
+	links: players.alliance settlements.types
+	description: Every payout period, each alliance holding at least one
+		settlement pays its members. Each settlement adds its type's income.
+		A share of the total is split equally among all members as the
+		base amount; the rest of each settlement's income goes to the
+		players recorded in its latest capture, as dividends. A
+		participant who has left is skipped and their share goes to the
+		remaining ones. Because income is split among members, a large
+		alliance pays each member less.
+	value period: open ticks
+	value base_share: open percent
+	criterion 1: scenario
+		given: An alliance with no settlements.
+		when: A payout period ends.
+		then: Its members get nothing.
+	criterion 2: unit proposed
+		given: An alliance of 4 holding one settlement with an income of 100
+			and a base share of 40%, captured by 2 of its members.
+		then: Every member gets 10 as the base amount; the 2 capturers get
+			30 more each.
+	criterion 3: unit proposed
+		given: A settlement whose capture participants have all left.
+		then: Its dividends go to all members equally.
+	criterion 4: review open
+		then: The payout period, base share and settlement incomes.
+
+story economy.salaries
+	title: Salaries
+	milestone: 4
+	links: troops.tiers economy.desertion
+	description: Every payout period, after income is paid, each troop
+		costs its salary by type and tier.
+	criterion 1: unit proposed
+		then: Income is paid before salaries in the same tick.
+	criterion 2: unit
+		given: A vasal with enough gold.
+		when: A payout period ends.
+		then: The sum of all salaries is taken from their gold.
+
+story economy.desertion
+	title: Desertion
+	milestone: 4
+	links: economy.salaries players.vasal combat.credit
+	description: When a vasal can't pay all salaries, troops start to
+		desert. If the last troop deserts, the vasal is dead.
+	value chance: open percent
+	criterion 1: unit proposed
+		given: A vasal whose gold covers only part of the salaries.
+		then: All gold is spent paying troops in id order; each unpaid
+			troop deserts with chance {economy.desertion.chance}, rolled
+			from the economy random stream.
+	criterion 2: scenario
+		when: A vasal's last troop deserts.
+		then: The vasal is dead.
+
+# ======================================================================
+# NPCs and treasure
+# ======================================================================
+
+story npcs.random
+	title: NPC events are seeded
+	milestone: 6
+	links: simulation.random
+	description: Every NPC and treasure decision (spawns, routes, timing,
+		amounts) comes from the match's NPC random stream, so tests that
+		fix the seed see the same NPCs every run.
+	criterion 1: scenario
+		given: The same scenario run twice with the same seed.
+		then: Bandits, caravans and treasure appear at the same ticks and
+			places in both runs.
+
+story npcs.rules
+	title: What NPCs never do
+	milestone: 6
+	links: capture.requirement combat.other
+	description: NPCs never capture settlements. They fight when
+		provoked, when aggressive, or when defending themselves.
+	criterion 1: scenario
+		given: Bandits standing in a settlement's capture area.
+		then: The settlement's capture timer does not change.
+
+story npcs.bandits
+	title: Bandits
+	milestone: 6
+	links: map.contents vintaines.modes economy.kills
+	description: Bandits live in camps placed on the map, and roaming
+		bandit vintaines wander between random points. They are a real threat
+		to new vasals and a nuisance to large armies. Fighting them has a
+		cost: a vasal weakened by bandits is easy prey, so going around
+		them is often better.
+	value camp_size: open troops
+	value roaming_bands: open count
+	value roaming_size: open troops
+	value respawn: open ticks
+	criterion 1: scenario
+		then: Each camp holds {npcs.bandits.camp_size} bandits in guard
+			mode around it.
+	criterion 2: scenario proposed
+		given: A camp whose bandits were all killed.
+		then: It fills again after {npcs.bandits.respawn} ticks, if no
+			player troop is near it.
+	criterion 3: scenario proposed
+		then: The map holds at most {npcs.bandits.roaming_bands} roaming
+			vintaines; a destroyed one is replaced at a random camp after
+			{npcs.bandits.respawn} ticks.
+	criterion 4: scenario proposed
+		then: Roaming bandits are aggressive toward player troops and
+			ignore caravans.
+
+story npcs.caravans
+	title: Caravans
+	milestone: 6
+	links: economy.gold combat.credit
+	description: Caravans travel between randomly chosen settlements at
+		least a minimum distance apart. They do nothing at settlements; the
+		route is only for show. They carry gold and usually only a few
+		guards. Attacking a caravan is the only way to get its gold. Once
+		the guards are dead and the gold is collected, the caravan stops
+		and disappears shortly after.
+	value count: open count
+	value distance: open distance
+	value guards: open troops
+	value gold: open gold
+	value linger: open ticks
+	criterion 1: unit
+		then: A caravan's start and destination are at least
+			{npcs.caravans.distance} apart.
+	criterion 2: unit proposed
+		then: The wagon itself can't be attacked; only its guards fight,
+			in defensive mode.
+	criterion 3: scenario proposed
+		when: The last guard of a caravan is killed.
+		then: The player credited with that kill gets the caravan's gold;
+			the caravan stops and disappears after {npcs.caravans.linger}
+			ticks.
+	criterion 4: scenario proposed
+		when: A caravan reaches its destination.
+		then: It disappears, and a new one starts between two other
+			settlements, so there are always {npcs.caravans.count}.
+
+story npcs.treasure
+	title: Treasure
+	milestone: 6
+	links: economy.gold
+	description: Treasure is a random pickup that spawns across the map
+		all the time, so there is always some as a last resort. It spawns
+		away from large armies, and more often when many players are low
+		on gold.
+	value max: open count
+	value gold: open gold
+	value pickup: open distance
+	value army_distance: open distance
+	criterion 1: unit
+		then: Treasure never spawns within {npcs.treasure.army_distance}
+			of a vintaine of 10 or more troops, on an impassable tile, or in a
+			capture area.
+	criterion 2: unit
+		then: There are never more than {npcs.treasure.max} treasures on
+			the map.
+	criterion 3: statistics
+		given: Matches where most players are low on gold.
+		then: Treasure spawns more often than in matches where few are.
+	criterion 4: unit proposed
+		when: Troops of several players come within {npcs.treasure.pickup}
+			of a treasure in the same tick.
+		then: The one with the lowest troop id picks it up.
+
+# ======================================================================
+# Match lifecycle
+# ======================================================================
+
+story match.lifecycle
+	title: A match
+	milestone: 5
+	links: server.process match.win
+	description: The server runs one match at a time. It has no time limit
+		and ends when one alliance holds 80% of all settlements.
+	criterion 1: unit proposed
+		when: The server starts.
+		then: A match starts on the configured map with a fresh seed.
+
+story match.capacity
+	title: Player limit
+	milestone: 5
+	links: players.cap
+	description: A match holds up to 100 players, shared equally among the
+		alliances through the alliance cap. There is no queue: a player who
+		finds every alliance full stays in the main menu.
+	value players: 100 count fixed
+	criterion 1: scenario
+		given: A match where every alliance is full.
+		then: The main menu shows every alliance as full and nobody can
+			join until a place frees.
+
+story match.spawn
+	title: Where new vasals appear
+	milestone: 5
+	links: map.contents players.join
+	description: A new vasal appears in one of the map's spawn areas with a
+		small starting centaine and a gold buffer that covers salaries for a
+		while.
+	value gold: open gold
+	value clearance: open distance
+	criterion 1: unit proposed
+		then: A vasal spawns in a random spawn area with no enemy troop
+			within {match.spawn.clearance}; if there is none, in the one
+			whose nearest enemy is farthest away.
+	criterion 2: review open
+		then: The starting centaine's troop types and how they are split
+			into vintaines. It includes a centenar.
+
+story match.rejoin
+	title: Death and rejoining
+	milestone: 5
+	links: players.vasal players.side players.cap flow.death
+	description: When a vasal dies, the player goes back to the main menu,
+		their alliance has one player fewer, and they can join again as a
+		new vasal in any alliance with room.
+	criterion 1: scenario
+		given: A player whose vasal just died, back in the main menu.
+		when: They join an alliance with room.
+		then: They join as a new vasal at once.
+
+story match.disconnect
+	title: Disconnects
+	milestone: 5
+	links: combat.other capture.ownership security.tokens
+	description: When a player disconnects, their vintaines finish their
+		current orders, then hold position. The player has a grace period
+		of 3 minutes to reconnect and take over the same centaine; the troops
+		can still be attacked meanwhile. After the grace period the centaine
+		disbands and the vasal is gone.
+	value grace: 3600 ticks
+	criterion 1: scenario
+		when: A player disconnects and reconnects within
+			{match.disconnect.grace} ticks.
+		then: They control the same vasal, centaine and gold.
+	criterion 2: scenario
+		when: A player stays away for {match.disconnect.grace} ticks.
+		then: Their troops disappear without anyone getting credit, their
+			gold is lost, and their alliance keeps its settlements.
+	criterion 3: unit proposed
+		then: Salaries are still paid during the grace period.
+	criterion 4: unit proposed
+		when: The player joins.
+		then: The server gives the client a random session token, which the
+			client keeps for the browser tab and presents to reconnect.
+			Reloading the page counts as a disconnect and a reconnect.
+	criterion 5: unit proposed
+		when: A second connection presents the token of a connected player.
+		then: The new connection takes over, and the old one is closed.
+
+story match.win
+	title: Winning
+	milestone: 5
+	links: combat.other match.stats
+	description: When one alliance holds 80% of all
+		settlements, all combat stops, and every player sees a match-over
+		banner with results and statistics, then returns to the main menu.
+	value share: 80 percent
+	criterion 1: unit
+		given: A map with 5 settlements.
+		when: One alliance holds 4 of them.
+		then: The match ends; neutral settlements count in the total.
+	criterion 2: unit
+		then: The check uses whole numbers: owned times 100 is at least
+			total times {match.win.share}.
+	criterion 3: scenario proposed
+		when: The match-over banner has been shown for a while.
+		then: The server starts a new match on the same map with a new seed,
+			and players return to the main menu.
+
+story match.stats
+	title: Match statistics
+	milestone: 5
+	links: match.win
+	description: Statistics shown at the end of a match.
+	criterion 1: review proposed
+		then: Per player: kills, troops lost, gold earned and captures. Per
+			alliance: settlements held and members.
+
+# ======================================================================
+# Client
+# ======================================================================
+
+story client.platform
+	title: The client runs in the browser
+	milestone: 0
+	links: build.cmake server.web
+	description: The client is C compiled to WebAssembly with Emscripten
+		and drawn with raylib. It needs no installation.
+	criterion 1: review proposed
+		then: The client runs in current desktop Chrome and Firefox. Phones
+			and tablets are not supported in the first build.
+
+story client.render
+	title: Rendering
+	milestone: 1
+	links: network.updates capture.bar
+	description: 2D, hand-drawn cartoon style with thick outlines, in an
+		isometric view: the map's grid is turned by 45 degrees and seen at a
+		slant, so a tile is a diamond twice as wide as it is tall, troops and
+		buildings are upright sprites standing on diamond footprints, and
+		circles on the ground (rings, areas) are drawn as ellipses half as tall
+		as wide. (The view was a three-quarter view at first; the user chose
+		isometric on 2026-10-11 to fit the settlement sketch.) The map editor
+		shows the map from straight above, which is easier to paint. The user's
+		reference is a cartoon RTS with small, readable troops in formation
+		blocks, flag bearers leading them, large settlement sprites with bars
+		above, and painted, warm terrain. The user's first sketch of settlements
+		(2026-10-11) sets their look: dark thick outlines, red and brown roofs,
+		gray stone, tufts of trees around each. Villages are a few houses,
+		sometimes a windmill or chapel; towns are houses and a church inside a
+		low wall; cities are many houses and spires inside a long wall; castles
+		are keeps and round towers with flags. Lone structures (watchtowers,
+		chapels, windmills, a bridge, a ruin) are decorations. Placeholder art
+		(colored shapes) until the game is fun.
+	value fps: 60 count
+	criterion 1: review
+		then: The client draws at least {client.render.fps} frames a
+			second with 10,000 units on the map and 500 in view.
+	criterion 2: unit
+		then: Sprites are drawn in order of how low they stand on the
+			screen, so lower ones appear in front.
+	criterion 3: review
+		then: Units face one side and are flipped horizontally for the
+			other.
+	criterion 4: review
+		then: Units show their alliance color, dulled. The player's own
+			troops show the same color bright, with accents, so they stand
+			out from their allies.
+	criterion 5: review
+		then: Selected vintaines have colored rings under them, capture areas
+			are ringed, and lines lead from a vintaine to its destination.
+
+story client.hud
+	title: Heads-up display
+	milestone: 2
+	links: vintaines.alerts map.minimap economy.gold
+	description: What the player sees around the map.
+	criterion 1: review proposed
+		then: The HUD shows the vasal's gold, each vintaine's troop count, mode
+			and order, the alerts and the minimap.
+
+
+story client.input
+	title: Controls
+	milestone: 1
+	links: vintaines.select vintaines.focus vintaines.orders map.camera
+	description: Mouse and keyboard controls.
+	criterion 1: review proposed
+		then: Keys 1 to 5 select vintaines and 6 the centenar, shift adds
+			or removes from the selection, Tab moves the focus, the right
+			mouse button orders (held down, it opens the action wheel), the
+			mouse never selects, and Q, W, E and R set the
+			aggressive, guard, defensive and flee modes. There are no keys
+			to move the camera.
+
+story client.replay
+	title: Timelapse viewer
+	milestone: 2
+	links: testing.scenarios
+	description: The client can load a timelapse file from a scenario run
+		and replay it, so a failing test can be watched instead of read.
+	criterion 1: review
+		then: The viewer replays a timelapse at any speed, with pause and
+			single steps.
+
+# ======================================================================
+# Editor
+# ======================================================================
+
+story editor.platform
+	title: The editor is standalone
+	milestone: 0
+	links: client.platform
+	description: The map editor is a separate program, also C compiled to
+		WebAssembly and drawn with raylib, with raygui for its widgets. It
+		is one HTML file with everything embedded, opened straight from
+		disk in a browser: no server is needed to make maps, and the game's
+		server never serves it, so players can't reach it.
+	criterion 1: review
+		then: The editor opens from its file in a browser with no server
+			running.
+	criterion 2: unit
+		then: The server answers 404 to the editor's file names.
+
+story editor.files
+	title: Opening and saving maps
+	milestone: 1
+	links: mapfile.format
+	description: The editor creates new maps, opens map files through the
+		browser's file picker and saves them as downloads.
+	criterion 1: unit
+		when: A map is saved and opened again.
+		then: The map is unchanged.
+
+story editor.tools
+	title: Editing
+	milestone: 1
+	links: map.contents map.terrain settlements.properties
+	description: The editor defines the map's terrain types and their
+		values, paints terrain, and places, moves and deletes settlements,
+		spawn areas, bandit camps and decorations. For each settlement it
+		sets the type, the name, the values and the flags.
+	criterion 1: review
+		then: Every kind of map content can be added, moved and deleted.
+	criterion 2: review
+		then: Every settlement value and flag can be set in the editor.
+	criterion 3: review
+		then: The editor has undo and redo, and can zoom, unlike the game.
+	criterion 4: review
+		then: Terrain types can be added, renamed and removed, and their
+			passability and speed set.
+	criterion 5: unit proposed
+		then: Undo puts the map back exactly as it was before the last
+			change, and redo exactly as after it; a change that changed
+			nothing is not kept.
+
+story editor.validation
+	title: Map checks
+	milestone: 1
+	links: mapfile.validation
+	description: The editor runs the same checks as the server and lists
+		every problem. A map with problems can be saved as a draft, but the
+		server refuses it.
+	criterion 1: unit
+		then: The checks report a settlement or spawn area on impassable
+			tiles, overlapping capture areas, and settlements that can't be
+			reached from any spawn area.
+
+# ======================================================================
+# Simulation
+# ======================================================================
+
+story simulation.authority
+	title: The server decides everything
+	milestone: 3
+	links: network.protocol security.validation
+	description: The server runs the only real simulation. Clients send
+		orders such as "vintaine 3 attack here", never positions or results,
+		and every random roll happens on the server.
+	criterion 1: review
+		then: No client message carries a position, a result or a roll that
+			the server takes as fact.
+
+story simulation.tick
+	title: Fixed ticks
+	milestone: 1
+	links: combat.tick
+	description: The simulation advances in ticks of fixed length, never
+		by wall-clock time. Orders take effect at the start of the next
+		tick.
+	value rate: 20 count fixed
+	criterion 1: unit
+		then: The simulation runs {simulation.tick.rate} ticks a second.
+	criterion 2: unit
+		then: A tick runs its steps in this order: apply orders, choose
+			targets by mode, move, pair duels, resolve combat, remove the
+			dead, update captures, pay out, spawn NPCs and treasure, check
+			for the end of the match.
+
+story simulation.determinism
+	title: Same input, same result
+	milestone: 1
+	links: simulation.random testing.scenarios
+	description: The same scenario with the same seed gives exactly the
+		same result on every run, compiler and machine. Positions and odds
+		use whole or fixed-point numbers, and everything is processed in
+		id order, never in an order that depends on memory addresses or
+		hashing.
+	criterion 1: lint
+		then: The engine uses no float or double.
+	criterion 2: scenario
+		given: A scenario run by the native Linux build and by the
+			WebAssembly build.
+		then: Both produce identical event logs.
+
+story simulation.random
+	title: Seeded random streams
+	milestone: 2
+	links: combat.random npcs.random economy.desertion match.spawn
+	description: All randomness comes from generators owned by the match
+		(PCG32), never from a global one or the clock. A match takes one
+		seed: in production the server reads it from the operating system
+		(getrandom), tests pass a fixed one. Each system (combat, NPCs,
+		treasure, economy, spawns) draws from its own stream derived from
+		that seed, so adding a roll to one system does not change the
+		results of another, and tests of one rule are not broken by
+		changes to another.
+	criterion 1: unit
+		then: The same seed gives the same sequence on every stream.
+	criterion 2: unit
+		when: One stream is drawn from more often.
+		then: The other streams' sequences do not change.
+	criterion 3: lint
+		then: The engine calls no rand, time or clock function.
+
+story simulation.memory
+	title: No allocation during a match
+	milestone: 1
+	links: simulation.limits
+	description: The engine allocates no memory after start-up. Everything
+		lives in pools sized by the hard limits, so memory use is known in
+		advance and can't leak or fragment.
+	criterion 1: lint
+		then: The engine calls no malloc, calloc, realloc or free.
+
+story simulation.limits
+	title: Hard limits
+	milestone: 1
+	links: centaine.size match.capacity security.limits
+	description: The limits the pools are sized by.
+	value troops: 10100 troops fixed
+	value npc_troops: open troops fixed
+	value settlements: open count fixed
+	criterion 1: unit
+		when: Something would exceed a limit (a spawn, a recruit).
+		then: It does not happen, and the simulation stays consistent.
+
+story simulation.ids
+	title: Ids
+	milestone: 1
+	links: simulation.determinism
+	description: Every player, vintaine, troop, NPC, settlement and treasure
+		has an id unique within the match.
+	criterion 1: unit
+		then: Ids are never reused within a match.
+
+story simulation.engine
+	title: The engine stands alone
+	milestone: 0
+	links: build.cmake
+	description: The engine holds the simulation, the map format and the
+		protocol. It depends only on the C standard library, so it runs
+		the same on the server, in the browser and in tests. Within it,
+		modules depend downwards only.
+	criterion 1: lint
+		then: The engine includes no platform header (sockets, Emscripten,
+			raylib) and depends on no other part of the project.
+
+story simulation.data
+	title: Tuning data
+	milestone: 2
+	links: tools.values
+	description: Tuning values are loaded from data files at start-up and
+		checked against their ranges in this specification.
+	criterion 1: unit
+		when: A data file holds a value outside its range, or misses one.
+		then: Loading fails with a message naming the value.
+
+story simulation.performance
+	title: Speed
+	milestone: 3
+	links: simulation.limits vintaines.movement map.space
+	description: A full match on a huge map must run comfortably on one
+		server core, and the client must stay smooth however large the map
+		is.
+	value tick_budget: open count
+	criterion 1: statistics proposed
+		given: A scenario with 100 players and 10,000 troops fighting on a
+			map of {map.space.max_side} tiles a side.
+		then: A tick takes at most {simulation.performance.tick_budget}
+			milliseconds on the reference machine.
+	criterion 2: unit proposed
+		then: The client draws only the tiles in view, and the minimap from
+			a texture drawn once and updated only where territory changes.
+	criterion 3: unit proposed
+		when: A player joins.
+		then: The client downloads the match's map file from the server
+			once, compressed.
+
+# ======================================================================
+# Map files
+# ======================================================================
+
+story mapfile.format
+	title: Map file format
+	milestone: 1
+	links: editor.files map.contents
+	description: A map is one binary file in little-endian order: a magic
+		word, a format version, then sections for the terrain types, the
+		terrain, settlements, spawn areas, bandit camps and decorations,
+		and a checksum. One engine module reads and writes it, for the
+		editor, server and client alike.
+	value max_size: open count fixed
+	criterion 1: unit
+		when: A map is written and read back.
+		then: It is unchanged.
+	criterion 2: unit
+		when: A file has another format version.
+		then: It is refused with a message naming both versions.
+	criterion 3: fuzz
+		then: No input file crashes the reader or makes it read outside
+			its buffer.
+
+story mapfile.validation
+	title: Checking map files
+	milestone: 1
+	links: editor.validation security.validation
+	description: Map files travel over the network and come from users, so
+		every field is checked on load.
+	criterion 1: unit
+		then: A wrong magic word or checksum, a section running past the
+			end of the file, a size above {mapfile.format.max_size}, a
+			count above a limit, or a position outside the map gets the
+			file refused.
+
+# ======================================================================
+# Network
+# ======================================================================
+
+story network.websocket
+	title: Own WebSocket implementation
+	milestone: 3
+	links: network.handshake security.limits
+	description: Browsers can't use raw TCP or UDP, so the client talks
+		WebSocket (RFC 6455). The server implements it by hand on its own
+		non-blocking TCP sockets: frames, masking, fragments, ping, pong
+		and close. Only binary messages are used.
+	criterion 1: unit
+		then: The frame parser handles every frame length encoding and
+			fragmented messages up to the message size limit.
+	criterion 2: unit
+		when: A client frame is not masked, is a text frame, or breaks the
+			protocol.
+		then: The server closes the connection with the matching close
+			code.
+	criterion 3: fuzz
+		then: No byte sequence crashes the frame parser.
+	criterion 4: unit
+		then: The server answers ping with pong and completes the close
+			handshake.
+
+story network.handshake
+	title: Opening a connection
+	milestone: 3
+	links: network.websocket security.origin
+	description: A connection starts as an HTTP/1.1 GET request asking to
+		upgrade. The server checks it and answers 101 with the accept key
+		built from the client's key (SHA-1 and Base64, written by hand).
+	criterion 1: unit
+		given: The example key from RFC 6455.
+		then: The accept key matches the one in the RFC.
+	criterion 2: unit
+		when: The request is malformed, too large, lacks a header or has a
+			wrong version.
+		then: The server answers 400 and closes the connection.
+	criterion 3: fuzz
+		then: No request crashes the HTTP parser.
+
+story network.protocol
+	title: Game protocol
+	milestone: 3
+	links: tools.protocol simulation.authority
+	description: Each WebSocket message holds one game message: a type,
+		then its fields, little-endian. The client's first message carries
+		the protocol version; an outdated client is told to reload. The
+		messages are declared in this specification, and their encode and
+		decode functions are generated into the engine, so the server and
+		client can't disagree.
+	criterion 1: unit
+		when: Any message is encoded and decoded.
+		then: The result equals the original.
+	criterion 2: unit
+		when: A client connects with another protocol version.
+		then: It is told to reload and is disconnected.
+	criterion 3: fuzz
+		then: No input crashes a decoder.
+	criterion 4: review open
+		then: The list of messages and their fields.
+
+story network.interest
+	title: Each player gets only what they can see
+	milestone: 3
+	links: map.sight security.visibility
+	description: The map is split into a grid. Each client receives only
+		the units it is allowed to see near its view and its vintaines, plus
+		coarse minimap data.
+	criterion 1: scenario
+		given: An enemy vintaine the player can't see.
+		then: No message to that player mentions it.
+
+story network.updates
+	title: Updates and smooth movement
+	milestone: 3
+	links: simulation.tick client.render
+	description: The server sends each client an update every tick. The
+		client draws between the last two updates, so movement is smooth
+		at 60 frames a second at the cost of about one tick of delay. Move
+		markers appear as soon as the player clicks.
+	value bandwidth: open count
+	criterion 1: statistics proposed
+		given: A full match.
+		then: No client receives more than {network.updates.bandwidth}
+			kilobytes a second on average.
+	criterion 2: review
+		then: Units move smoothly between updates.
+
+story network.liveness
+	title: Detecting lost connections
+	milestone: 3
+	links: match.disconnect
+	description: The server pings each client regularly and drops those
+		that stop answering.
+	value timeout: open ticks
+	criterion 1: unit
+		when: A client sends nothing for {network.liveness.timeout} ticks.
+		then: The server treats it as disconnected.
+	criterion 2: unit proposed
+		when: A client reads too slowly and its send buffer fills up.
+		then: The server disconnects it instead of buffering more.
+
+story network.tls
+	title: Encryption
+	milestone: 7
+	links: server.process
+	description: A home-made TLS would not be secure, so the server speaks
+		plain WebSocket and HTTP. In production a reverse proxy (Caddy)
+		terminates TLS and forwards to the server, which then listens only
+		on the local machine.
+	criterion 1: review
+		then: Production traffic is served over https and wss only.
+
+# ======================================================================
+# Security
+# ======================================================================
+
+story security.validation
+	title: Trust nothing from a client
+	milestone: 3
+	links: vintaines.orders network.protocol
+	description: Every client message is checked before use: size,
+		version, type, field ranges, that the player owns the vintaines they
+		command and that they can see what they target.
+	criterion 1: unit
+		when: A message fails a check.
+		then: It has no effect, the server logs it, and the connection is
+			closed.
+	criterion 2: fuzz
+		then: Random messages from a connected client never crash the
+			server or change the match.
+
+story security.limits
+	title: Limits against abuse
+	milestone: 3
+	links: network.websocket network.liveness
+	description: Hard limits keep one client from exhausting the server.
+	value connections: open count fixed
+	value per_address: open count
+	value message_size: open count fixed
+	value orders: open count
+	value handshake: open ticks
+	criterion 1: unit
+		then: Connections beyond {security.limits.connections}, or beyond
+			{security.limits.per_address} from one address, are refused.
+	criterion 2: unit
+		then: A message larger than {security.limits.message_size} bytes
+			closes the connection.
+	criterion 3: unit
+		then: A client sending more than {security.limits.orders} orders a
+			second is disconnected.
+	criterion 4: unit
+		then: A connection that has not finished its handshake within
+			{security.limits.handshake} ticks is closed.
+	criterion 5: unit proposed
+		then: Behind the reverse proxy, the address of a client is taken
+			from the proxy's header, and only when the request comes from
+			the configured proxy.
+
+story security.origin
+	title: Only our pages may connect
+	milestone: 3
+	links: network.handshake
+	description: The upgrade request's Origin header must be one of the
+		configured origins, so other websites can't connect players'
+		browsers to the server.
+	criterion 1: unit
+		when: The Origin header is missing or not configured.
+		then: The server answers 403.
+
+story security.visibility
+	title: No map hacks
+	milestone: 3
+	links: network.interest map.sight
+	description: Since the server sends only what a player may see, a
+		modified client gains no hidden information.
+	criterion 1: scenario
+		then: Nothing sent to a player reveals units outside what the rules
+			let them see.
+
+story security.tokens
+	title: Session tokens
+	milestone: 5
+	links: match.disconnect
+	description: Reconnecting uses a random session token from the server.
+	criterion 1: unit
+		then: A token has 128 random bits from the operating system and is
+			compared in constant time.
+	criterion 2: unit
+		when: The vasal dies or the grace period ends.
+		then: The token stops working.
+
+story security.code
+	title: Memory safety checks
+	milestone: 0
+	links: build.check build.fuzz testing.scenarios
+	description: C gives no protection against memory errors, so the code
+		is checked by every means available. Fuzzing (AFL++) starts in
+		milestone 3, with the WebSocket and protocol parsers.
+	criterion 1: lint
+		then: Debug and test builds run with AddressSanitizer and
+			UndefinedBehaviorSanitizer, and all tests pass under them.
+	criterion 2: lint
+		then: Every parser (HTTP, WebSocket, protocol, map files, tuning
+			data) has a fuzz target.
+
+story security.server
+	title: Running the server safely
+	milestone: 7
+	links: server.process
+	description: The server runs as an unprivileged user and needs only
+		read access to its map, data and web files.
+	criterion 1: review
+		then: The server runs without root and writes nothing but its log.
+
+# ======================================================================
+# Server
+# ======================================================================
+
+story server.process
+	title: The match server
+	milestone: 3
+	links: match.lifecycle network.websocket
+	description: One Linux process runs one match: a single thread with
+		an epoll loop and a timer for the ticks. Settings come from the
+		command line: address, port, map file, data file, web folder,
+		allowed origins and, for testing, a seed.
+	criterion 1: unit
+		when: A setting is missing or wrong.
+		then: The server prints what is wrong and exits with a non-zero
+			code.
+	criterion 2: unit
+		when: The server gets SIGINT or SIGTERM.
+		then: It closes all connections cleanly and exits with code 0.
+	criterion 3: unit proposed
+		when: A tick takes longer than its time.
+		then: The server logs it and starts the next tick at once; it
+			never skips a tick.
+
+story server.web
+	title: Serving the client
+	milestone: 0
+	links: client.platform editor.platform
+	description: The server also answers plain HTTP GET requests for the
+		client's files (not the editor's). It loads a fixed list of files
+		into memory at start-up and serves only those, so there is no path
+		to attack. One process and one port serve everything.
+	criterion 1: unit
+		when: A request asks for a file that is not on the list.
+		then: The server answers 404, whatever the path holds.
+	criterion 2: unit
+		when: A request uses a method other than GET.
+		then: The server answers 405.
+	criterion 3: unit
+		then: Each file is served with its correct content type.
+
+story server.log
+	title: Logging
+	milestone: 3
+	links: testing.scenarios
+	description: The server writes one line per event to standard output.
+	criterion 1: unit proposed
+		then: The log holds the match seed and every order received, so a
+			match can be replayed exactly.
+	criterion 2: unit proposed
+		then: Repeated messages from one client are logged at most once a
+			second, so a client can't flood the log.
+
+# ======================================================================
+# Testing
+# ======================================================================
+
+story testing.unit
+	title: Unit tests
+	milestone: 0
+	links: build.tests
+	description: Unit tests use the cairo framework.
+	criterion 1: lint
+		then: Every unit test names the criteria it checks.
+
+story testing.scenarios
+	title: Scenario tests
+	milestone: 2
+	links: simulation.determinism client.replay
+	description: A scenario is a data file: a small map, players with
+		alliances, gold and vintaines, orders at given ticks (sent through
+		the same path as real players' orders), a seed, a tick count and
+		expected results in the same form as expect lines here. A headless
+		runner built from the engine produces an event log, the final state
+		and a timelapse of positions.
+	value seeds: open count
+	criterion 1: unit
+		then: The runner checks the scenario's expected results and prints
+			the first difference when one fails.
+	criterion 2: unit
+		then: Golden files hold the full event log and final state; a
+			command approves new output after an intended change.
+	criterion 3: unit
+		then: Statistical scenarios run over {testing.scenarios.seeds}
+			seeds and check ranges.
+
+story testing.duels
+	title: Duel simulator
+	milestone: 2
+	links: combat.strike
+	description: A tool that runs thousands of duels per matchup and
+		reports the distribution of strikes and winners, used to tune the
+		combat values.
+	criterion 1: review
+		then: The simulator reports, per matchup, the win share and the
+			average and spread of strikes.
+
+# ======================================================================
+# Tools
+# ======================================================================
+
+story tools.check
+	title: Specification checker
+	milestone: 0
+	links: testing.unit
+	description: A tool that reads this file, the code and the tests, and
+		reports anything that does not match. The check target runs it,
+		so it runs in CI.
+	criterion 1: unit
+		then: It reports a malformed story, a duplicate id, a link or
+			reference to a missing id, and an agreed criterion (except
+			review) without a test.
+	criterion 2: review
+		then: The tool is written in Python (tools/spec.py), like every
+			tool of the project.
+
+story tools.values
+	title: Values generator
+	milestone: 2
+	links: simulation.data simulation.limits
+	description: Generates the tuning data files and the limits header from
+		the values in this file, so no number is written twice.
+	criterion 1: unit
+		then: Every fixed value becomes a constant in the generated header,
+			and every other value an entry in the generated data files with
+			its range.
+
+story tools.protocol
+	title: Protocol generator
+	milestone: 3
+	links: network.protocol
+	description: Generates the encode and decode functions of every game
+		message from their declarations in this file.
+	criterion 1: unit
+		then: Every declared message gets an encode and a decode function
+			that check every field's range.
+
+# ======================================================================
+# Build
+# ======================================================================
+
+story build.cmake
+	title: CMake
+	milestone: 0
+	links: build.docker build.scripts
+	description: One CMake project with a folder per program and one for
+		the engine. Its targets are server, tests, check, client and
+		editor. A build tree uses one toolchain, so server, tests and
+		check are built in a Linux tree with gcc, and client and editor in
+		a web tree with Emscripten. A workflow preset per target picks the
+		tree, so building a target is one cmake --workflow --preset
+		<target>. The configuration, debug or release, is set by the
+		environment variable vasal_config and has a build folder of its
+		own (build/linux-<config>, build/web-<config>). Release is the
+		default.
+	criterion 1: review
+		then: Every workflow preset builds from a clean checkout.
+
+story build.docker
+	title: Building only in Docker
+	milestone: 0
+	links: build.scripts
+	description: All builds run in one Docker image, which shares the
+		project folder, so the output appears in build/. The image holds
+		gcc, cppcheck, clang-tidy, Python, CMake and Emscripten (and AFL++
+		from milestone 3). The project is compiled with gcc only; other
+		tools in the image may be clang-based.
+	criterion 1: review
+		then: Building needs nothing on the host but Docker.
+
+story build.check
+	title: Static analysis and checks
+	milestone: 0
+	links: security.code build.style tools.check
+	description: The check target runs cppcheck with the MISRA C:2012
+		add-on and clang-tidy, each program on its own, the specification
+		check (tools/spec.py) and the engine's include rule. Accepted MISRA
+		deviations are listed in docs/code_style.md and
+		.cmake/cppcheck_suppressions.txt.
+	criterion 1: review
+		then: The check target passes with no findings except the
+			documented deviations.
+
+story build.fuzz
+	title: Fuzzing
+	milestone: 3
+	links: security.code build.check
+	description: Every parser that reads outside input (HTTP, WebSocket
+		frames, game messages, map files, tuning data) has a fuzz target.
+		They are built with AFL++ through its gcc plugin, so the project is
+		still compiled with gcc only, and run with AddressSanitizer and
+		UndefinedBehaviorSanitizer. A fuzz target in the Linux tree runs
+		each of them for a set time.
+	value time: open ticks
+	criterion 1: review
+		then: The fuzz target builds every fuzz target with AFL++ and gcc
+			and runs each one; a crash or sanitizer finding fails it.
+
+story build.tests
+	title: Running tests
+	milestone: 0
+	links: testing.unit testing.scenarios tools.check
+	description: The tests target builds the unit tests and runs them
+		through CTest: the C tests (cairo) and the Python tests of the
+		tools.
+	criterion 1: review
+		then: One command builds and runs every unit test.
+
+story build.ci
+	title: Continuous integration
+	milestone: 0
+	links: build.check build.tests
+	description: GitHub Actions runs the check, the tests and the release
+		builds on every push to main and on demand, in the same Docker
+		image, and keeps the release server, client and editor as the
+		run's artifact.
+	criterion 1: review
+		then: A push to main runs the workflow.
+
+story build.scripts
+	title: Scripts
+	milestone: 0
+	links: build.docker build.cmake
+	description: The scripts folder holds .ps1 and .sh versions of every
+		script, run from the scripts folder. They only wrap commands:
+		build_image builds the Docker image, build <target> [debug|release]
+		runs the target's workflow preset in it, run_server
+		[debug|release] runs the server, passing every other argument on,
+		and run_editor [debug|release] opens the editor's file in the
+		default browser. All default to release.
+	criterion 1: review
+		then: Every script exists in both versions and behaves the same.
+
+story build.style
+	title: Code style
+	milestone: 0
+	links: build.check
+	description: All code follows docs/code_style.md: C with the prefix
+		vasal, Python for the tools. Every text file follows the file
+		rules: an empty first line, one final newline, tabs, LF, ASCII, at
+		most 80 columns, no trailing spaces.
+	criterion 1: lint
+		then: The specification check reports files that break the file
+			rules.
+
+# ======================================================================
+# Later
+# ======================================================================
+
+story later.troops
+	title: More troop types
+	milestone: later
+	links: troops.types
+	description: Battle axe, heavy and light infantry; crossbowmen and
+		slingers.
+
+story later.magic
+	title: Magic items
+	milestone: later
+	description: One-use gems bought in towns, such as a fire gem that
+		burns an area or a heal gem that heals troops in an area, allies
+		included.
+
+story later.matches
+	title: Several matches
+	milestone: later
+	links: match.lifecycle
+	description: A match server per match, an agent per machine starting
+		and stopping them, and a central orchestrator routing players.
+		Old and new versions run side by side, so an update never stops a
+		running match. Matches without a time limit need a maintenance
+		deadline, a save and resume, or a maximum length.
+
+story later.defense
+	title: Rewarding defense
+	milestone: later
+	links: economy.payout
+	description: Settlements could also remember the players who fought
+		enemies nearby, not just the capturers, and pay them dividends.
+
+story later.pigeons
+	title: Courier pigeons
+	milestone: later
+	links: map.sight map.camera
+	description: Since a player sees only where their troops are, news from
+		elsewhere could come by courier pigeon: a mechanism to learn what
+		happens in other parts of the map, with a delay or a cost.
+
+story later.formations
+	title: Formations
+	milestone: later
+	links: vintaines.movement
+	description: Lines, squares and other formations a vintaine could take,
+		instead of the round group of the first build.

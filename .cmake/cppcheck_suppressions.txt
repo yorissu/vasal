@@ -1,0 +1,58 @@
+
+# cppcheck_suppressions.txt: the findings the check target accepts. Each is
+# a MISRA C:2012 deviation documented in docs/code_style.md; anything else
+# cppcheck reports fails the check.
+
+# 2.3, 2.4, 2.5 (advisory): API headers define complete sets of types, tags
+# and values, not only the ones today's code uses.
+misra-c2012-2.3
+misra-c2012-2.4
+misra-c2012-2.5
+
+# 21.1, 21.2 (required): private names (static functions, types, macros
+# and variables of one .c file) start with an underscore, as the code style
+# says.
+misra-c2012-21.1
+misra-c2012-21.2
+
+# 8.7 (advisory): module functions keep external linkage even when one
+# other file uses them.
+misra-c2012-8.7
+
+# 8.9 (advisory): tables and buffers stay at file scope, where they are easy
+# to find and read.
+misra-c2012-8.9
+
+# 15.1 (advisory): goto, forward only, to one exit point.
+misra-c2012-15.1
+
+# 15.5 (advisory): early returns (guard clauses).
+misra-c2012-15.5
+
+# 21.6 (required): the server's log writes with stdio.
+misra-c2012-21.6:*/server/log.c
+
+# 21.5 (required): the server stops on SIGINT and SIGTERM through signalfd.
+misra-c2012-21.5:*/server/signals.c
+
+# 11.3 (required): the sockets API takes struct sockaddr pointers.
+misra-c2012-11.3:*/server/network.c
+
+# 21.10 (required): the server's network loop reads the monotonic clock
+# (clock_gettime); no date or time-of-day functions are used.
+misra-c2012-21.10:*/server/network.c
+
+# 11.5 (advisory): Emscripten hands downloaded data to its callback as a
+# void pointer, in client/main.c.
+misra-c2012-11.5:*/client/main.c
+
+# 22.10 (required): the network loop tests errno right after the POSIX
+# calls that set it (accept, recv, send, epoll_wait); the add-on only knows
+# the errno-setting functions of the C standard library.
+misra-c2012-22.10:*/server/network.c
+
+# Standard library and system headers are not analysed, so cppcheck can't
+# tell every system macro (EPOLLIN, EAGAIN) apart from an unknown variable.
+missingIncludeSystem
+misra-config
+checkersReport
