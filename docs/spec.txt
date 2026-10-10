@@ -2135,6 +2135,13 @@ story client.render
 			edge of sight is a smooth curve around the troops.
 		why: The user's correction of 2026-10-11: this is not a tile map but
 			a huge plane with sprites on it.
+	criterion 7: unit
+		then: Every settlement shows a sprite of its type from the user's
+			sheet (art/structures.png), picked by its position so a map
+			always looks the same, and every decoration the lone structure
+			of its kind; they stand on the ground, drawn in order with the
+			troops, and are shown inside sight or not, grayed outside it.
+		why: The user's first art, of 2026-10-11.
 
 story client.hud
 	title: Heads-up display

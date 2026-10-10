@@ -2,3 +2,5 @@
 # Every text file is stored and checked out with LF line endings, also on
 # Windows, as the file rules require.
 * text=auto eol=lf
+# Except the art, which is binary.
+*.png binary

@@ -16,6 +16,7 @@ set(vasal_test_web_sources
 	${PROJECT_SOURCE_DIR}/client/keys.c
 	${PROJECT_SOURCE_DIR}/client/layout.c
 	${PROJECT_SOURCE_DIR}/client/minimap.c
+	${PROJECT_SOURCE_DIR}/client/sprites.c
 	${PROJECT_SOURCE_DIR}/client/stress.c
 	${PROJECT_SOURCE_DIR}/client/wheel.c
 	${PROJECT_SOURCE_DIR}/editor/document.c)

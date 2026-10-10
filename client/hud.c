@@ -17,6 +17,7 @@
 #define _vasal_client_hud_focus (Color){ 255, 236, 200, 255 }
 #define _vasal_client_hud_own (Color){ 236, 72, 58, 255 }
 #define _vasal_client_hud_other (Color){ 150, 160, 200, 255 }
+#define _vasal_client_hud_settlement (Color){ 120, 72, 40, 255 }
 
 // The minimap's picture of the map, drawn once per map, as the map never
 // changes during a match; territory will update only where it changes.
@@ -151,6 +152,19 @@ static void _vasal_client_hud_map(const vasal_client_game_s* const game,
 	left += (float)padding;
 	top += (float)padding;
 	DrawTexture(_vasal_client_hud_minimap, (int)left, (int)top, WHITE);
+	// Settlements, always: the map is known.
+	// spec: map.sight#4
+	for (size_t i = 0U; i < world->map->settlement_count; i++) {
+		const vasal_engine_map_point_s at = world->map->settlements[i].position;
+		float px = 0.0f;
+		float py = 0.0f;
+		vasal_client_minimap_to_pixel(world->map, (float)at.x + 0.5f,
+			(float)at.y + 0.5f, &px, &py);
+		const float dot_x = left + px;
+		const float dot_y = top + py;
+		DrawRectangle((int)dot_x - 2, (int)dot_y - 2, 4, 4,
+			_vasal_client_hud_settlement);
+	}
 	for (size_t v = 0U; v < world->vasal_count; v++) {
 		const bool_t own = v == game->vasal;
 		for (size_t g = 0U; g < vasal_engine_world_groups; g++) {

@@ -8,13 +8,17 @@
 
 #include "engine/types.h"
 
-/// A troop to draw: where, in tiles, whether it is a centenar, and
-/// whether it is the player's own.
+/// A troop or a sprite to draw: where it stands, in tiles, whether it is a
+/// centenar, whether it is the player's own, and for a sprite (a
+/// settlement or a lone structure) which one, -1 for a troop, and how far
+/// inside the player's sight it stands.
 typedef struct vasal_client_depth_troop_s {
-	float  x;
-	float  y;
-	bool_t centenar;
-	bool_t own;
+	float   x;
+	float   y;
+	bool_t  centenar;
+	bool_t  own;
+	int32_t sprite;
+	float   sight;
 } vasal_client_depth_troop_s;
 
 /// Sorts troops by x + y, lowest first, keeping the order of equal ones.

@@ -1,7 +1,8 @@
 
 /// The demonstration map, drawn from simple shapes so it is the same every
 /// time: a river running north to south with a ford where the road crosses
-/// it, two forests, and patches of tall and short grass.
+/// it, two forests, patches of tall and short grass, a settlement of every
+/// type and a few lone structures.
 
 #include "client/demo.h"
 
@@ -56,6 +57,50 @@ static void _vasal_client_demo_patch(vasal_engine_map_s* const map,
 	}
 }
 
+// A settlement of a type, with its defaults, named, at a tile.
+static void _vasal_client_demo_settlement(vasal_engine_map_s* const map,
+		const char* const name, const vasal_engine_map_settlement_type_e type,
+		const uint16_t x, const uint16_t y) {
+	vasal_engine_map_settlement_s* const settlement =
+		&map->settlements[map->settlement_count];
+	vasal_engine_map_settlement_defaults(settlement, type);
+	size_t length = strlen(name);
+	if (length > (vasal_engine_map_name_capacity - 1U)) {
+		length = vasal_engine_map_name_capacity - 1U;
+	}
+	(void)memcpy(settlement->name, name, length);
+	settlement->name[length] = '\0';
+	settlement->position.x = x;
+	settlement->position.y = y;
+	map->settlement_count++;
+}
+
+// A few settlements of every type, and lone structures: watchtowers by the
+// river, a bridge where the road crosses it, a windmill, a chapel, a ruin.
+// spec: client.render#7
+static void _vasal_client_demo_settlements(vasal_engine_map_s* const map) {
+	_vasal_client_demo_settlement(map, "Ashford",
+		vasal_engine_map_settlement_village, 80U, 106U);
+	_vasal_client_demo_settlement(map, "Bramwell",
+		vasal_engine_map_settlement_town, 45U, 152U);
+	_vasal_client_demo_settlement(map, "Corvin",
+		vasal_engine_map_settlement_castle, 170U, 96U);
+	_vasal_client_demo_settlement(map, "Dunmere",
+		vasal_engine_map_settlement_city, 205U, 135U);
+	// Kinds: 0 to 3 watchtowers, 4 to 6 chapels, 7 a windmill, 8 a bridge,
+	// 9 a ruin (client/sprites.h).
+	static const uint16_t structures[6][3] = {
+		{ 112U, 116U, 0U }, { 140U, 60U, 2U }, { 124U, 123U, 8U },
+		{ 40U, 128U, 7U }, { 95U, 95U, 4U }, { 150U, 200U, 9U }
+	};
+	for (size_t i = 0U; i < 6U; i++) {
+		map->decorations[i].position.x = structures[i][0];
+		map->decorations[i].position.y = structures[i][1];
+		map->decorations[i].kind = structures[i][2];
+	}
+	map->decoration_count = 6U;
+}
+
 void vasal_client_demo_make(vasal_engine_map_s* const map) {
 	(void)vasal_engine_map_clear(map, vasal_client_demo_side,
 		vasal_client_demo_side);
@@ -89,6 +134,8 @@ void vasal_client_demo_make(vasal_engine_map_s* const map) {
 			_vasal_client_demo_set(map, x, 122 + w, _vasal_client_demo_road);
 		}
 	}
+
+	_vasal_client_demo_settlements(map);
 
 	const vasal_engine_map_spawn_s spawn = {
 		{ vasal_client_demo_spawn_x, vasal_client_demo_spawn_y }, 6U

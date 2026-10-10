@@ -8,6 +8,7 @@
 #include "client/view.h"
 #include "client/depth.h"
 #include "client/ground.h"
+#include "client/sprites.h"
 
 #include <raylib.h>
 
@@ -23,10 +24,15 @@
 #define _vasal_client_view_other (Color){ 112, 120, 150, 255 }
 #define _vasal_client_view_other_rim (Color){ 60, 64, 80, 255 }
 
-// The most troops drawn at once.
+// The most troops and sprites drawn at once.
 #define _vasal_client_view_troops_max                                         \
-	(vasal_engine_world_vasals_max * vasal_engine_world_groups                \
-		* vasal_engine_world_troops)
+	((vasal_engine_world_vasals_max * vasal_engine_world_groups               \
+		* vasal_engine_world_troops) + vasal_engine_map_settlements_max       \
+		+ vasal_engine_map_decorations_max)
+
+// The sheet of settlement and structure sprites (client/sprites.h).
+static Texture2D _vasal_client_view_sheet;
+static bool_t _vasal_client_view_sheet_loaded = false;
 
 static Color _vasal_client_view_color(const uint32_t rgba) {
 	const Color color = {
@@ -222,6 +228,8 @@ static size_t _vasal_client_view_gather(const vasal_client_game_s* const game,
 					troops[count].y = y;
 					troops[count].centenar = vasal_engine_world_centenar == g;
 					troops[count].own = own;
+					troops[count].sprite = -1;
+					troops[count].sight = 1.0f;
 					count++;
 				}
 			}
@@ -230,14 +238,100 @@ static size_t _vasal_client_view_gather(const vasal_client_game_s* const game,
 	return count;
 }
 
+// Adds a sprite standing at a tile to the things to draw, if it reaches
+// into the window. Returns the new count.
+static size_t _vasal_client_view_sprite(const vasal_client_game_s* const game,
+		const vasal_client_camera_s* const camera, const float width,
+		const float height, const vasal_engine_map_point_s at,
+		const size_t sprite, vasal_client_depth_troop_s* const things,
+		const size_t count) {
+	const float x = (float)at.x + 0.5f;
+	const float y = (float)at.y + 0.5f;
+	float sx = 0.0f;
+	float sy = 0.0f;
+	vasal_client_camera_to_screen(camera, width, height, x, y, &sx, &sy);
+	const vasal_client_sprites_rect_s rect = vasal_client_sprites_rect(sprite);
+	const float reach = ((float)rect.width + (float)rect.height)
+		/ vasal_client_sprites_pixels_per_tile * camera->scale;
+	if (!_vasal_client_view_on_screen(sx, sy, width, height, reach)) {
+		return count;
+	}
+	things[count].x = x;
+	things[count].y = y;
+	things[count].centenar = false;
+	things[count].own = false;
+	things[count].sprite = (int32_t)sprite;
+	things[count].sight = vasal_client_game_sight_at(game, x, y);
+	return count + 1U;
+}
+
+// Gathers the map's settlements and lone structures in the window. They
+// are shown inside sight or not: the map is known.
+// spec: client.render#7 map.sight#4
+static size_t _vasal_client_view_structures(
+		const vasal_client_game_s* const game,
+		const vasal_client_camera_s* const camera, const float width,
+		const float height, vasal_client_depth_troop_s* const things,
+		const size_t count) {
+	const vasal_engine_map_s* const map = game->world->map;
+	size_t total = count;
+	for (size_t i = 0U; i < map->settlement_count; i++) {
+		total = _vasal_client_view_sprite(game, camera, width, height,
+			map->settlements[i].position,
+			vasal_client_sprites_settlement(&map->settlements[i]), things,
+			total);
+	}
+	for (size_t i = 0U; i < map->decoration_count; i++) {
+		total = _vasal_client_view_sprite(game, camera, width, height,
+			map->decorations[i].position,
+			vasal_client_sprites_decoration(&map->decorations[i]), things,
+			total);
+	}
+	return total;
+}
+
+// Draws a sprite with its foot on a window pixel, grayed outside sight as
+// the ground is.
+static void _vasal_client_view_draw_sprite(
+		const vasal_client_camera_s* const camera,
+		const vasal_client_depth_troop_s* const thing, const float sx,
+		const float sy) {
+	if (!_vasal_client_view_sheet_loaded) {
+		_vasal_client_view_sheet = LoadTexture(vasal_client_sprites_file);
+		GenTextureMipmaps(&_vasal_client_view_sheet);
+		SetTextureFilter(_vasal_client_view_sheet,
+			TEXTURE_FILTER_TRILINEAR);
+		_vasal_client_view_sheet_loaded = true;
+	}
+	const size_t sprite = (size_t)thing->sprite;
+	const vasal_client_sprites_rect_s rect = vasal_client_sprites_rect(sprite);
+	float foot_x = 0.0f;
+	float foot_y = 0.0f;
+	vasal_client_sprites_foot(sprite, &foot_x, &foot_y);
+	const float size = camera->scale / vasal_client_sprites_pixels_per_tile;
+	const Rectangle source = {
+		(float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height
+	};
+	const Rectangle target = {
+		sx - (foot_x * size), sy - (foot_y * size), (float)rect.width * size,
+		(float)rect.height * size
+	};
+	const float light = 150.0f + (105.0f * thing->sight);
+	const unsigned char shade = (unsigned char)light;
+	const Color tint = { shade, shade, shade, 255U };
+	DrawTexturePro(_vasal_client_view_sheet, source, target,
+		(Vector2){ 0.0f, 0.0f }, 0.0f, tint);
+}
+
 // Draws troops lower on the screen later, in front.
 // spec: client.render#2 client.render#4
 static size_t _vasal_client_view_troops(const vasal_client_game_s* const game,
 		const vasal_client_camera_s* const camera, const float width,
 		const float height) {
 	static vasal_client_depth_troop_s troops[_vasal_client_view_troops_max];
-	const size_t count = _vasal_client_view_gather(game, camera, width,
-		height, troops);
+	const size_t count = _vasal_client_view_structures(game, camera, width,
+		height, troops, _vasal_client_view_gather(game, camera, width,
+			height, troops));
 	vasal_client_depth_sort(troops, count);
 	const float scale = camera->scale;
 	for (size_t i = 0U; i < count; i++) {
@@ -245,6 +339,10 @@ static size_t _vasal_client_view_troops(const vasal_client_game_s* const game,
 		float sy = 0.0f;
 		vasal_client_camera_to_screen(camera, width, height, troops[i].x,
 			troops[i].y, &sx, &sy);
+		if (0 <= troops[i].sprite) {
+			_vasal_client_view_draw_sprite(camera, &troops[i], sx, sy);
+			continue;
+		}
 		const bool_t centenar = troops[i].centenar;
 		const float radius = (centenar ? 0.45f : 0.32f) * scale;
 		const Vector2 at = { sx, sy };
