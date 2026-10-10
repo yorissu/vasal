@@ -60,6 +60,8 @@ typedef struct vasal_engine_world_group_s {
 	vasal_engine_world_troop_s    troops[vasal_engine_world_troops];
 	/// The point the group forms up around, moving along its path.
 	vasal_engine_world_position_s anchor;
+	/// Where the anchor stood when the group set out on its path.
+	vasal_engine_world_position_s origin;
 	vasal_engine_map_point_s      waypoints[vasal_engine_world_waypoints];
 	uint16_t                      waypoint_count;
 	uint16_t                      waypoint_next;

@@ -1,8 +1,13 @@
 
 /// Orders and movement. A moving group's anchor walks its path; each troop
-/// walks toward its place in a round formation around the anchor. Speeds
-/// are scaled by the terrain under the one moving, so a group bunches up in
-/// slow ground. A troop never steps onto an impassable tile.
+/// walks toward its place in a round formation around the anchor. A place
+/// the anchor can't reach in a straight line over passable tiles is drawn
+/// in toward it, and a troop that can't reach its place in a straight line
+/// follows the anchor's path instead, so troops neither cut across water
+/// nor get stuck behind it. Troops of a group closer than
+/// _vasal_engine_world_spacing step apart a little. Speeds are scaled by
+/// the terrain under the one moving, so a group bunches up in slow ground.
+/// A troop never steps onto an impassable tile.
 
 #include "engine/world.h"
 
@@ -22,6 +27,18 @@ static const vasal_engine_world_position_s
 static const int32_t _vasal_engine_world_spots[vasal_engine_world_groups][2] = {
 	{ 0, 0 }, { 6, 0 }, { -6, 0 }, { 0, 6 }, { 0, -6 }, { 6, 6 }
 };
+
+// Troops of a group closer than this, in 1/vasal_engine_map_precision of a
+// tile, step apart; the formation sets them about a tile apart.
+#define _vasal_engine_world_spacing 96
+
+// A troop this close to a point, in 1/vasal_engine_map_precision of a
+// tile, is on it.
+#define _vasal_engine_world_close 16U
+
+// How many legs of the path behind its anchor a troop that can't see its
+// place looks back along.
+#define _vasal_engine_world_look_back 4U
 
 // The integer square root, rounded down.
 static uint32_t _vasal_engine_world_root(const uint64_t value) {
@@ -86,11 +103,19 @@ static uint32_t _vasal_engine_world_terrain(
 	return terrain->passable ? (uint32_t)terrain->speed : 0U;
 }
 
+// Whether a straight line between two positions crosses only passable
+// tiles.
+static bool_t _vasal_engine_world_clear(
+		const vasal_engine_world_position_s from,
+		const vasal_engine_world_position_s to) {
+	return vasal_engine_path_clear(from.x, from.y, to.x, to.y);
+}
+
 // Moves a position up to budget toward a target, in a straight line,
-// refusing impassable ground: when the straight step is blocked it tries
-// along each axis alone. Returns the distance left to the target.
+// refusing to cross impassable ground, even at a tile corner: when the
+// straight step is blocked it tries along each axis alone. Returns the
+// distance left to the target.
 static uint32_t _vasal_engine_world_step(
-		const vasal_engine_world_s* const world,
 		vasal_engine_world_position_s* const position,
 		const vasal_engine_world_position_s target, const uint32_t budget) {
 	const int64_t dx = (int64_t)target.x - (int64_t)position->x;
@@ -106,16 +131,156 @@ static uint32_t _vasal_engine_world_step(
 	};
 	const vasal_engine_world_position_s along_x = { straight.x, position->y };
 	const vasal_engine_world_position_s along_y = { position->x, straight.y };
-	if (0U < _vasal_engine_world_terrain(world, straight)) {
+	if (_vasal_engine_world_clear(*position, straight)) {
 		*position = straight;
-	} else if (0U < _vasal_engine_world_terrain(world, along_x)) {
+	} else if (_vasal_engine_world_clear(*position, along_x)) {
 		*position = along_x;
-	} else if (0U < _vasal_engine_world_terrain(world, along_y)) {
+	} else if (_vasal_engine_world_clear(*position, along_y)) {
 		*position = along_y;
 	} else {
 		// Blocked on every side toward the target.
 	}
 	return distance - step;
+}
+
+// A troop's place: its spot in the formation around the anchor, drawn in
+// toward the anchor, by quarters, until the anchor can reach it in a
+// straight line over passable tiles.
+// spec: vintaines.movement#7
+static vasal_engine_world_position_s _vasal_engine_world_place(
+		const vasal_engine_world_group_s* const group, const size_t troop) {
+	vasal_engine_world_position_s place = group->anchor;
+	bool_t found = false;
+	for (int32_t part = 4; (0 < part) && !found; part--) {
+		const vasal_engine_world_position_s spot = {
+			group->anchor.x
+				+ ((_vasal_engine_world_formation[troop].x * part) / 4),
+			group->anchor.y
+				+ ((_vasal_engine_world_formation[troop].y * part) / 4)
+		};
+		if (_vasal_engine_world_clear(group->anchor, spot)) {
+			place = spot;
+			found = true;
+		}
+	}
+	return place;
+}
+
+// The point of the segment from a to b nearest to a position.
+static vasal_engine_world_position_s _vasal_engine_world_nearest(
+		const vasal_engine_world_position_s a,
+		const vasal_engine_world_position_s b,
+		const vasal_engine_world_position_s position) {
+	const int64_t dx = (int64_t)b.x - (int64_t)a.x;
+	const int64_t dy = (int64_t)b.y - (int64_t)a.y;
+	const int64_t square = (dx * dx) + (dy * dy);
+	int64_t along = (((int64_t)position.x - (int64_t)a.x) * dx)
+		+ (((int64_t)position.y - (int64_t)a.y) * dy);
+	if ((0 == square) || (along < 0)) {
+		along = 0;
+	}
+	if (along > square) {
+		along = square;
+	}
+	vasal_engine_world_position_s nearest = a;
+	if (0 < square) {
+		nearest.x = a.x + (int32_t)((dx * along) / square);
+		nearest.y = a.y + (int32_t)((dy * along) / square);
+	}
+	return nearest;
+}
+
+// Where a troop heads for: its place when it can reach it in a straight
+// line over passable tiles, else the anchor. Else it follows the anchor's
+// path back from the anchor toward where it set out, a few legs at most:
+// the near end of a leg if it can reach it, else the nearest point of the
+// leg, from where the near end is in reach. With none of them in reach it
+// heads for its place anyway, sliding along what blocks it.
+// spec: vintaines.movement#7
+static vasal_engine_world_position_s _vasal_engine_world_target(
+		const vasal_engine_world_group_s* const group,
+		const vasal_engine_world_position_s position,
+		const vasal_engine_world_position_s place) {
+	if (_vasal_engine_world_clear(position, place)) {
+		return place;
+	}
+	if (_vasal_engine_world_clear(position, group->anchor)) {
+		return group->anchor;
+	}
+	size_t next = group->waypoint_next;
+	if (next > group->waypoint_count) {
+		next = group->waypoint_count;
+	}
+	vasal_engine_world_position_s near = group->anchor;
+	bool_t legs = true;
+	for (size_t looked = 0U; legs
+			&& (looked < _vasal_engine_world_look_back); looked++) {
+		vasal_engine_world_position_s far = group->origin;
+		if (0U < next) {
+			far = _vasal_engine_world_center(group->waypoints[next - 1U]);
+			next--;
+		} else {
+			legs = false;
+		}
+		const vasal_engine_world_position_s nearest =
+			_vasal_engine_world_nearest(far, near, position);
+		const bool_t moves = _vasal_engine_world_distance(position, nearest)
+			>= _vasal_engine_world_close;
+		if (moves && _vasal_engine_world_clear(position, nearest)) {
+			return nearest;
+		}
+		if (_vasal_engine_world_clear(position, far)) {
+			return far;
+		}
+		near = far;
+	}
+	return place;
+}
+
+// Moves a troop by an offset, if the straight line there is clear.
+static void _vasal_engine_world_nudge(vasal_engine_world_troop_s* const troop,
+		const int32_t dx, const int32_t dy) {
+	const vasal_engine_world_position_s to = {
+		troop->position.x + dx, troop->position.y + dy
+	};
+	if (_vasal_engine_world_clear(troop->position, to)) {
+		troop->position = to;
+	}
+}
+
+// Steps troops of a group that stand closer than the spacing a little
+// apart, a quarter of the overlap each, pair by pair in a fixed order.
+// Troops on the same spot part along x, the later one east.
+// spec: vintaines.movement#8
+static void _vasal_engine_world_separate(
+		vasal_engine_world_group_s* const group) {
+	const int32_t spacing = _vasal_engine_world_spacing;
+	for (size_t i = 1U; i < group->troop_count; i++) {
+		for (size_t j = 0U; j < i; j++) {
+			vasal_engine_world_troop_s* const a = &group->troops[i];
+			vasal_engine_world_troop_s* const b = &group->troops[j];
+			const int32_t dx = a->position.x - b->position.x;
+			const int32_t dy = a->position.y - b->position.y;
+			if ((dx <= -spacing) || (dx >= spacing) || (dy <= -spacing)
+					|| (dy >= spacing)) {
+				continue;
+			}
+			const int32_t distance = (int32_t)_vasal_engine_world_distance(
+				a->position, b->position);
+			if (distance >= spacing) {
+				continue;
+			}
+			const int32_t push = (spacing - distance) / 4;
+			int32_t px = push;
+			int32_t py = 0;
+			if (0 < distance) {
+				px = (dx * push) / distance;
+				py = (dy * push) / distance;
+			}
+			_vasal_engine_world_nudge(a, px, py);
+			_vasal_engine_world_nudge(b, -px, -py);
+		}
+	}
 }
 
 // The slowest and fastest troop of a group.
@@ -134,6 +299,7 @@ static void _vasal_engine_world_speeds(
 // Sets a group on its way to a tile.
 static void _vasal_engine_world_head_to(vasal_engine_world_group_s* const group,
 		const vasal_engine_map_point_s goal) {
+	group->origin = group->anchor;
 	const size_t count = vasal_engine_path_find(
 		_vasal_engine_world_tile(group->anchor), goal, group->waypoints,
 		vasal_engine_world_waypoints);
@@ -180,8 +346,7 @@ static void _vasal_engine_world_move_anchor(
 			group->moving = group->waypoint_next < group->waypoint_count;
 		} else {
 			const vasal_engine_world_position_s before = group->anchor;
-			(void)_vasal_engine_world_step(world, &group->anchor, target,
-				budget);
+			(void)_vasal_engine_world_step(&group->anchor, target, budget);
 			budget = 0U;
 			if ((before.x == group->anchor.x)
 					&& (before.y == group->anchor.y)) {
@@ -192,6 +357,7 @@ static void _vasal_engine_world_move_anchor(
 }
 
 // spec: vintaines.pace#1 vintaines.pace#2 vintaines.movement#2
+// spec: vintaines.movement#7
 static void _vasal_engine_world_move_group(
 		const vasal_engine_world_s* const world,
 		vasal_engine_world_group_s* const group) {
@@ -209,21 +375,18 @@ static void _vasal_engine_world_move_group(
 	_vasal_engine_world_next_order(group);
 	for (size_t i = 0U; i < group->troop_count; i++) {
 		vasal_engine_world_troop_s* const troop = &group->troops[i];
-		vasal_engine_world_position_s place = {
-			group->anchor.x + _vasal_engine_world_formation[i].x,
-			group->anchor.y + _vasal_engine_world_formation[i].y
-		};
-		if (0U == _vasal_engine_world_terrain(world, place)) {
-			place = group->anchor;
-		}
+		const vasal_engine_world_position_s target =
+			_vasal_engine_world_target(group, troop->position,
+				_vasal_engine_world_place(group, i));
 		const uint32_t speed = in_step ? slowest : (uint32_t)troop->speed;
 		uint32_t budget = (speed
 			* _vasal_engine_world_terrain(world, troop->position)) / 100U;
 		if ((0U == budget) && (0U < speed)) {
 			budget = 1U;
 		}
-		(void)_vasal_engine_world_step(world, &troop->position, place, budget);
+		(void)_vasal_engine_world_step(&troop->position, target, budget);
 	}
+	_vasal_engine_world_separate(group);
 }
 
 void vasal_engine_world_start(vasal_engine_world_s* const world,
@@ -250,6 +413,7 @@ size_t vasal_engine_world_add_vasal(vasal_engine_world_s* const world,
 	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
 		vasal_engine_world_group_s* const group = &vasal->groups[g];
 		group->anchor = _vasal_engine_world_center(at);
+		group->origin = group->anchor;
 		group->troop_count = 0U;
 		group->waypoint_count = 0U;
 		group->waypoint_next = 0U;

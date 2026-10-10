@@ -200,3 +200,120 @@ cairo_test_new(engine_world, same_orders_same_result_and_unique_ids) {
 		}
 	}
 }
+
+// A world on a 64 by 64 map of grass with a river of water 5 tiles wide
+// from corner to corner, crossed by a ford at y = 40 to 46, and one vasal at
+// (5, 5).
+static vasal_engine_world_s* _vasal_tests_engine_world_ford(
+		vasal_engine_world_s* const world) {
+	vasal_engine_map_s* const map = &_vasal_tests_engine_world_map;
+	(void)vasal_engine_map_clear(map, 64U, 64U);
+	const vasal_engine_map_terrain_s water = {
+		.name = "water", .color = 0U, .speed = 0U, .passable = false
+	};
+	map->terrains[1] = water;
+	map->terrain_count = 2U;
+	for (size_t y = 0U; y < 64U; y++) {
+		for (size_t x = 0U; x < 64U; x++) {
+			const size_t sum = x + y;
+			const bool_t river = (sum >= 61U) && (sum <= 65U);
+			const bool_t ford = (y >= 40U) && (y <= 46U);
+			map->tiles[(y * 64U) + x] = (uint8_t)((river && !ford) ? 1U : 0U);
+		}
+	}
+	vasal_engine_world_start(world, map);
+	const vasal_engine_map_point_s spawn = { 5U, 5U };
+	(void)vasal_engine_world_add_vasal(world, spawn);
+	return world;
+}
+
+// spec: vintaines.movement#7 map.terrain#1
+cairo_test_new(engine_world, troops_follow_the_path_across_a_ford) {
+	vasal_engine_world_s* const world =
+		_vasal_tests_engine_world_ford(&_vasal_tests_engine_world_world);
+	_vasal_tests_engine_world_troops(world, 0U, 20U, 30U);
+	const vasal_engine_map_point_s to = { 58U, 58U };
+	cairo_assert_true(vasal_engine_world_order_move(world, 0U, 1U, to));
+	const vasal_engine_world_group_s* const group =
+		&world->vasals[0].groups[0];
+	for (uint32_t i = 0U; i < 2000U; i++) {
+		vasal_engine_world_tick(world);
+		for (size_t t = 0U; t < 20U; t++) {
+			const vasal_engine_world_position_s at = group->troops[t].position;
+			cairo_assert_true(vasal_engine_map_terrain(world->map,
+				(uint16_t)(at.x / 256), (uint16_t)(at.y / 256))->passable);
+		}
+	}
+	cairo_assert_false(group->moving);
+	cairo_assert_eq(group->anchor.x / 256, 58);
+	cairo_assert_eq(group->anchor.y / 256, 58);
+	// Nobody is left on the far bank.
+	for (size_t t = 0U; t < 20U; t++) {
+		cairo_assert_lt(_vasal_tests_engine_world_distance2(
+			group->troops[t].position, group->anchor),
+			(int64_t)(3 * 256) * (3 * 256));
+	}
+}
+
+// spec: vintaines.movement#7
+cairo_test_new(engine_world, places_stay_on_the_near_side_of_water) {
+	vasal_engine_world_s* const world =
+		_vasal_tests_engine_world_start(&_vasal_tests_engine_world_world);
+	_vasal_tests_engine_world_troops(world, 0U, 20U, 40U);
+	// Right beside the wall of water at x = 30, whose far side is free.
+	const vasal_engine_map_point_s to = { 29U, 20U };
+	cairo_assert_true(vasal_engine_world_order_move(world, 0U, 1U, to));
+	_vasal_tests_engine_world_run(world, 600U);
+	const vasal_engine_world_group_s* const group =
+		&world->vasals[0].groups[0];
+	cairo_assert_false(group->moving);
+	for (size_t t = 0U; t < 20U; t++) {
+		cairo_assert_lt(group->troops[t].position.x, 30 * 256);
+	}
+	// Settled: every troop is where it heads for, not pressed against the
+	// water.
+	vasal_engine_world_position_s before[20];
+	for (size_t t = 0U; t < 20U; t++) {
+		before[t] = group->troops[t].position;
+	}
+	_vasal_tests_engine_world_run(world, 20U);
+	for (size_t t = 0U; t < 20U; t++) {
+		cairo_assert_lt(_vasal_tests_engine_world_distance2(before[t],
+			group->troops[t].position), 16 * 16);
+	}
+}
+
+// spec: vintaines.movement#8
+cairo_test_new(engine_world, troops_do_not_stack_in_a_narrow_pass) {
+	vasal_engine_world_s* const world = &_vasal_tests_engine_world_world;
+	vasal_engine_map_s* const map = &_vasal_tests_engine_world_map;
+	(void)vasal_engine_map_clear(map, 60U, 20U);
+	const vasal_engine_map_terrain_s water = {
+		.name = "water", .color = 0U, .speed = 0U, .passable = false
+	};
+	map->terrains[1] = water;
+	map->terrain_count = 2U;
+	// Water everywhere but a pass one tile wide along y = 10.
+	for (size_t y = 0U; y < 20U; y++) {
+		for (size_t x = 0U; x < 60U; x++) {
+			const bool_t pass = (10U == y) && (x >= 2U) && (x < 58U);
+			map->tiles[(y * 60U) + x] = (uint8_t)(pass ? 0U : 1U);
+		}
+	}
+	vasal_engine_world_start(world, map);
+	const vasal_engine_map_point_s spawn = { 30U, 10U };
+	(void)vasal_engine_world_add_vasal(world, spawn);
+	// All the troops start on the same spot.
+	_vasal_tests_engine_world_troops(world, 0U, 20U, 20U);
+	_vasal_tests_engine_world_run(world, 200U);
+	const vasal_engine_world_group_s* const group =
+		&world->vasals[0].groups[0];
+	for (size_t i = 0U; i < 20U; i++) {
+		const vasal_engine_world_position_s at = group->troops[i].position;
+		cairo_assert_eq(at.y / 256, 10);
+		for (size_t j = 0U; j < i; j++) {
+			cairo_assert_ge(_vasal_tests_engine_world_distance2(at,
+				group->troops[j].position), 16 * 16);
+		}
+	}
+}

@@ -25,7 +25,7 @@ function(vasal_web_program target name folder single shell)
 		RUNTIME_OUTPUT_DIRECTORY ${link_directory}
 		LINK_DEPENDS ${shell})
 	# The map, the world and the path search buffers are static: about
-	# 30 MB, more than Emscripten's default start.
+	# 35 MB, more than Emscripten's default start.
 	target_link_options(${target} PRIVATE --shell-file ${shell}
 		-sINITIAL_MEMORY=67108864)
 	set(outputs ${link_directory}/${name}.html)

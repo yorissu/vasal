@@ -403,6 +403,17 @@ story map.terrain
 		then: Each troop moves at the vintaine's pace times the speed of
 			the tile it stands on, so the vintaine bunches up in slow
 			ground and stretches out again after it.
+	criterion 7: unit proposed
+		given: Slow ground, with a road through it that runs a few regions
+			away from the straight line between two points.
+		then: A vintaine sent from one point to the other takes the road
+			when it is faster: the coarse level of the search knows that a
+			region crossed by a road is fast along the road.
+	criterion 8: unit proposed
+		given: A patch of tall grass on the straight line between two
+			points, with short grass around it.
+		then: Pulling the path straight never cuts through the tall grass
+			when going around it is faster.
 
 story map.camera
 	title: Camera and view
@@ -1227,6 +1238,27 @@ story vintaines.movement
 	criterion 4: unit proposed
 		then: A path planned in two levels takes at most a few percent
 			longer to walk than the best path.
+	criterion 5: unit proposed
+		then: Paths are pulled straight: a turning point is dropped when
+			the straight line that replaces it crosses only passable
+			tiles (where it passes exactly through a tile corner, both
+			tiles beside the corner too) and takes no longer to walk, so
+			a vintaine walks at any angle, not only in 8 directions.
+	criterion 6: unit proposed
+		given: A path planned in two levels.
+		then: The fine search may use the regions up to two regions from
+			the coarse path, so a better way that bends away from it is
+			still found.
+	criterion 7: unit proposed
+		then: No troop crosses an impassable tile, not even at a tile
+			corner, on its way to its place, and none is left behind
+			it. A place the vintaine's position can't reach in a straight
+			line is drawn in toward the position, and a troop that can't
+			reach its place in a straight line follows the vintaine's
+			path.
+	criterion 8: unit proposed
+		then: Troops of one vintaine closer than 3/8 of a tile step a
+			little apart each tick, so they don't stack on one spot.
 
 story vintaines.pace
 	title: Marching pace

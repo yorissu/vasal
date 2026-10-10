@@ -3,11 +3,17 @@
 /// passable tiles connected within the region, so water or forest that cuts
 /// a region in two makes two components. The coarse search runs over
 /// components: two are linked when a legal step crosses from one into the
-/// other, and a component's cost is the average step cost of its tiles.
-/// The fine search runs only over the tiles of the corridor: the regions of
-/// the coarse path and their neighbours, mapped to slots so its buffers
-/// stay small. Steps go in 8 directions; a diagonal step needs both tiles
+/// other. A component costs, per axis, the average step cost of its
+/// cheapest way across from one side to the other, so a road through slow
+/// ground makes it cheap along the road only; a component with no way
+/// across costs the average step cost of its tiles. The fine search runs
+/// only over the tiles of the corridor: the regions of the coarse path and
+/// those up to two regions from it, mapped to slots so its buffers stay
+/// small. Steps go in 8 directions; a diagonal step needs both tiles
 /// beside it passable, so paths never cut corners through water or forest.
+/// Last, the path is pulled straight: a turning point is dropped when the
+/// straight line that replaces it crosses only passable tiles and takes no
+/// longer to walk.
 
 #include "engine/path.h"
 
@@ -21,15 +27,22 @@
 #define _vasal_engine_path_components 16U
 #define _vasal_engine_path_groups_max                                         \
 	(_vasal_engine_path_regions_max * _vasal_engine_path_components)
-#define _vasal_engine_path_corridor_max 512U
+#define _vasal_engine_path_corridor_max 768U
+// How many regions on each side of the coarse path the corridor takes in:
+// with one, the fine search misses ways that bend away from it further.
+#define _vasal_engine_path_margin 2
 #define _vasal_engine_path_nodes_max                                          \
 	(_vasal_engine_path_corridor_max * _vasal_engine_path_region_tiles)
 #define _vasal_engine_path_heap_max (_vasal_engine_path_nodes_max * 2U)
 #define _vasal_engine_path_none 0xffffffffU
 #define _vasal_engine_path_no_slot 0xffffU
 #define _vasal_engine_path_no_component 0xffU
+// The component of a passable tile not yet given one.
+#define _vasal_engine_path_unassigned 0xfeU
 #define _vasal_engine_path_straight 100U
 #define _vasal_engine_path_diagonal 141U
+// Fractions of a straight line are counted in 1/65536.
+#define _vasal_engine_path_whole 65536U
 
 // A node in the open list, by priority (cost so far plus estimate).
 typedef struct _vasal_engine_path_entry_s {
@@ -48,14 +61,20 @@ static uint32_t _vasal_engine_path_rows = 0U;
 // overestimate.
 static uint32_t _vasal_engine_path_cheapest = 1U;
 
-// The component of every tile, or none when it is impassable.
+// The component of every tile, or none when it is impassable, so it also
+// answers whether a tile is passable without looking up its terrain.
 static uint8_t _vasal_engine_path_tile_component
 	[vasal_engine_map_side_max * vasal_engine_map_side_max];
 
 // Per group (a region's component, numbered region * components +
-// component): average step cost, and per direction a bit for each
-// component of the neighbouring region it links to.
-static uint32_t _vasal_engine_path_group_cost[_vasal_engine_path_groups_max];
+// component): the step cost of crossing it west to east and north to
+// south, and per direction a bit for each component of the neighbouring
+// region it links to.
+static uint32_t _vasal_engine_path_group_cost
+	[_vasal_engine_path_groups_max][2];
+// Whether a group's cost along an axis is already that of a way across,
+// while preparing.
+static uint8_t _vasal_engine_path_crossed[_vasal_engine_path_groups_max][2];
 static uint16_t _vasal_engine_path_group_links
 	[_vasal_engine_path_groups_max][8];
 
@@ -75,8 +94,11 @@ static uint32_t _vasal_engine_path_slot_count = 0U;
 static uint32_t _vasal_engine_path_g[_vasal_engine_path_nodes_max];
 static uint32_t _vasal_engine_path_parent[_vasal_engine_path_nodes_max];
 static uint8_t _vasal_engine_path_state[_vasal_engine_path_nodes_max];
+// The fine path, from the start on, and the time to walk it up to each of
+// its tiles.
 static vasal_engine_map_point_s
 	_vasal_engine_path_trail[_vasal_engine_path_nodes_max];
+static uint64_t _vasal_engine_path_elapsed[_vasal_engine_path_nodes_max];
 
 // The open list, a binary heap shared by both searches.
 static _vasal_engine_path_entry_s
@@ -139,7 +161,9 @@ static bool_t _vasal_engine_path_passable(const int32_t x, const int32_t y) {
 			|| (y >= (int32_t)map->height)) {
 		return false;
 	}
-	return vasal_engine_map_terrain(map, (uint16_t)x, (uint16_t)y)->passable;
+	const size_t tile = ((size_t)y * (size_t)map->width) + (size_t)x;
+	return _vasal_engine_path_no_component
+		!= _vasal_engine_path_tile_component[tile];
 }
 
 uint32_t vasal_engine_path_step_cost(const uint16_t x, const uint16_t y) {
@@ -247,7 +271,7 @@ static void _vasal_engine_path_fill(const int32_t x, const int32_t y,
 				continue;
 			}
 			const size_t neighbour = _vasal_engine_path_tile(nx, ny);
-			if (_vasal_engine_path_no_component
+			if (_vasal_engine_path_unassigned
 					== _vasal_engine_path_tile_component[neighbour]) {
 				_vasal_engine_path_tile_component[neighbour] = component;
 				queue[tail].x = (uint16_t)nx;
@@ -258,8 +282,9 @@ static void _vasal_engine_path_fill(const int32_t x, const int32_t y,
 	}
 }
 
-// Gives every passable tile of a region its component.
-static void _vasal_engine_path_split(const uint32_t region) {
+// The bounds of a region's tiles.
+static _vasal_engine_path_bounds_s _vasal_engine_path_region_bounds(
+		const uint32_t region) {
 	const vasal_engine_map_s* const map = _vasal_engine_path_map;
 	const int32_t side = (int32_t)vasal_engine_path_region_side;
 	_vasal_engine_path_bounds_s bounds;
@@ -269,13 +294,19 @@ static void _vasal_engine_path_split(const uint32_t region) {
 		? (bounds.left + side) : (int32_t)map->width;
 	bounds.bottom = ((bounds.top + side) < (int32_t)map->height)
 		? (bounds.top + side) : (int32_t)map->height;
+	return bounds;
+}
+
+// Gives every passable tile of a region its component.
+static void _vasal_engine_path_split(const uint32_t region) {
+	const _vasal_engine_path_bounds_s bounds =
+		_vasal_engine_path_region_bounds(region);
 	uint8_t next = 0U;
 	for (int32_t y = bounds.top; y < bounds.bottom; y++) {
 		for (int32_t x = bounds.left; x < bounds.right; x++) {
-			const bool_t unassigned = _vasal_engine_path_no_component
-				== _vasal_engine_path_tile_component
-					[_vasal_engine_path_tile(x, y)];
-			if (_vasal_engine_path_passable(x, y) && unassigned) {
+			if (_vasal_engine_path_unassigned
+					== _vasal_engine_path_tile_component
+						[_vasal_engine_path_tile(x, y)]) {
 				_vasal_engine_path_fill(x, y, next, &bounds);
 				if ((_vasal_engine_path_components - 1U) > next) {
 					next++;
@@ -310,6 +341,136 @@ static void _vasal_engine_path_link(const int32_t x, const int32_t y,
 	}
 }
 
+// The direction of a step, from its offsets.
+static size_t _vasal_engine_path_direction(const int32_t dx,
+		const int32_t dy) {
+	size_t found = 0U;
+	for (size_t d = 0U; d < 8U; d++) {
+		if ((_vasal_engine_path_dx[d] == dx)
+				&& (_vasal_engine_path_dy[d] == dy)) {
+			found = d;
+		}
+	}
+	return found;
+}
+
+// The tile at a distance along an axis (0: x, 1: y) and across it.
+static vasal_engine_map_point_s _vasal_engine_path_on_axis(
+		const uint32_t axis, const int32_t along, const int32_t across) {
+	vasal_engine_map_point_s tile = { (uint16_t)along, (uint16_t)across };
+	if (1U == axis) {
+		tile.x = (uint16_t)across;
+		tile.y = (uint16_t)along;
+	}
+	return tile;
+}
+
+// No way across, in _vasal_engine_path_cross.
+#define _vasal_engine_path_no_way 0xffffffffffffffffU
+
+// A line of tiles across an axis (0: x, 1: y), at a distance along it,
+// from low to high across it.
+typedef struct _vasal_engine_path_span_s {
+	uint32_t axis;
+	int32_t  along;
+	int32_t  low;
+	int32_t  high;
+} _vasal_engine_path_span_s;
+
+// The cost of the cheapest way to a tile across a line from the line
+// before it, given the cheapest ways to each tile of that line, or no way.
+static uint64_t _vasal_engine_path_cross_tile(
+		const _vasal_engine_path_span_s* const span, const int32_t across,
+		const uint64_t* const before) {
+	const vasal_engine_map_point_s tile =
+		_vasal_engine_path_on_axis(span->axis, span->along, across);
+	const uint64_t cost = vasal_engine_path_step_cost(tile.x, tile.y);
+	uint64_t best = _vasal_engine_path_no_way;
+	for (int32_t side = -1; side <= 1; side++) {
+		const int32_t from = across - side;
+		if ((from < span->low) || (from >= span->high)) {
+			continue;
+		}
+		const uint64_t way = before[(size_t)from - (size_t)span->low];
+		const vasal_engine_map_point_s back =
+			_vasal_engine_path_on_axis(span->axis, span->along - 1, from);
+		const size_t d = _vasal_engine_path_direction(
+			(int32_t)tile.x - (int32_t)back.x,
+			(int32_t)tile.y - (int32_t)back.y);
+		if ((_vasal_engine_path_no_way != way)
+				&& _vasal_engine_path_can_step((int32_t)back.x,
+					(int32_t)back.y, d)) {
+			const uint64_t total = way + ((cost
+				* _vasal_engine_path_length(d)) / _vasal_engine_path_straight);
+			best = (total < best) ? total : best;
+		}
+	}
+	return best;
+}
+
+// Sets, for every component of a region, the step cost of its cheapest
+// way across along an axis (0: west to east, 1: north to south), counting
+// only ways that move forward with every step, leaving the average cost
+// already set when it has no such way. A dynamic program over the lines
+// across the axis, one after the other.
+// spec: map.terrain#4 map.terrain#7
+static void _vasal_engine_path_cross(const uint32_t region,
+		const uint32_t axis) {
+	const _vasal_engine_path_bounds_s bounds =
+		_vasal_engine_path_region_bounds(region);
+	const int32_t first = (0U == axis) ? bounds.left : bounds.top;
+	const int32_t last = (0U == axis) ? bounds.right : bounds.bottom;
+	_vasal_engine_path_span_s span;
+	span.axis = axis;
+	span.low = (0U == axis) ? bounds.top : bounds.left;
+	span.high = (0U == axis) ? bounds.bottom : bounds.right;
+	const size_t count = (size_t)span.high - (size_t)span.low;
+	uint64_t before[vasal_engine_path_region_side];
+	uint64_t now[vasal_engine_path_region_side];
+	for (size_t i = 0U; i < vasal_engine_path_region_side; i++) {
+		before[i] = _vasal_engine_path_no_way;
+		now[i] = _vasal_engine_path_no_way;
+	}
+	for (span.along = first; span.along < last; span.along++) {
+		for (size_t i = 0U; i < count; i++) {
+			const int32_t across = span.low + (int32_t)i;
+			const vasal_engine_map_point_s tile =
+				_vasal_engine_path_on_axis(axis, span.along, across);
+			now[i] = _vasal_engine_path_no_way;
+			if (!_vasal_engine_path_passable((int32_t)tile.x,
+					(int32_t)tile.y)) {
+				// No way onto water.
+			} else if (span.along == first) {
+				now[i] = vasal_engine_path_step_cost(tile.x, tile.y);
+			} else {
+				now[i] = _vasal_engine_path_cross_tile(&span, across, before);
+			}
+		}
+		for (size_t i = 0U; i < count; i++) {
+			before[i] = now[i];
+		}
+	}
+	const uint64_t length = (uint64_t)last - (uint64_t)first;
+	for (size_t i = 0U; i < count; i++) {
+		const vasal_engine_map_point_s tile = _vasal_engine_path_on_axis(axis,
+			last - 1, span.low + (int32_t)i);
+		if (_vasal_engine_path_no_way == before[i]) {
+			continue;
+		}
+		const uint32_t component = _vasal_engine_path_tile_component
+			[_vasal_engine_path_tile((int32_t)tile.x, (int32_t)tile.y)];
+		const uint32_t group = (region * _vasal_engine_path_components)
+			+ component;
+		const uint32_t cost = (uint32_t)(before[i] / length);
+		uint32_t* const crossing = &_vasal_engine_path_group_cost[group][axis];
+		if ((0U == _vasal_engine_path_crossed[group][axis])
+				|| (cost < *crossing)) {
+			*crossing = cost;
+			_vasal_engine_path_crossed[group][axis] = 1U;
+		}
+	}
+}
+
 // spec: vintaines.movement map.terrain
 void vasal_engine_path_prepare(const vasal_engine_map_s* const map) {
 	_vasal_engine_path_map = map;
@@ -328,7 +489,9 @@ void vasal_engine_path_prepare(const vasal_engine_map_s* const map) {
 	const size_t tiles = (size_t)map->width * (size_t)map->height;
 	for (size_t i = 0U; i < tiles; i++) {
 		_vasal_engine_path_tile_component[i] =
-			_vasal_engine_path_no_component;
+			map->terrains[map->tiles[i]].passable
+				? _vasal_engine_path_unassigned
+				: _vasal_engine_path_no_component;
 	}
 	const uint32_t regions = _vasal_engine_path_columns
 		* _vasal_engine_path_rows;
@@ -342,7 +505,10 @@ void vasal_engine_path_prepare(const vasal_engine_map_s* const map) {
 	for (uint32_t g = 0U; g < groups; g++) {
 		sums[g] = 0U;
 		counts[g] = 0U;
-		_vasal_engine_path_group_cost[g] = 0U;
+		_vasal_engine_path_group_cost[g][0] = 0U;
+		_vasal_engine_path_group_cost[g][1] = 0U;
+		_vasal_engine_path_crossed[g][0] = 0U;
+		_vasal_engine_path_crossed[g][1] = 0U;
 		for (size_t d = 0U; d < 8U; d++) {
 			_vasal_engine_path_group_links[g][d] = 0U;
 		}
@@ -360,9 +526,15 @@ void vasal_engine_path_prepare(const vasal_engine_map_s* const map) {
 	}
 	for (uint32_t g = 0U; g < groups; g++) {
 		if (0U < counts[g]) {
-			_vasal_engine_path_group_cost[g] =
+			_vasal_engine_path_group_cost[g][0] =
 				(uint32_t)(sums[g] / counts[g]);
+			_vasal_engine_path_group_cost[g][1] =
+				_vasal_engine_path_group_cost[g][0];
 		}
+	}
+	for (uint32_t region = 0U; region < regions; region++) {
+		_vasal_engine_path_cross(region, 0U);
+		_vasal_engine_path_cross(region, 1U);
 	}
 }
 
@@ -405,6 +577,22 @@ typedef struct _vasal_engine_path_goal_s {
 	uint32_t scale;
 } _vasal_engine_path_goal_s;
 
+// The step cost of crossing a group in direction d: its cost along the
+// axis of d, or the mean of both axes for a diagonal.
+static uint32_t _vasal_engine_path_group_step(const uint32_t group,
+		const size_t d) {
+	const uint32_t* const cost = _vasal_engine_path_group_cost[group];
+	uint32_t step = (cost[0] + cost[1]) / 2U;
+	if (0 == _vasal_engine_path_dy[d]) {
+		step = cost[0];
+	} else if (0 == _vasal_engine_path_dx[d]) {
+		step = cost[1];
+	} else {
+		// A diagonal crosses both ways at once.
+	}
+	return step;
+}
+
 // Opens the groups a group links to.
 static void _vasal_engine_path_expand_group(const uint32_t group,
 		const _vasal_engine_path_goal_s* const goal) {
@@ -422,8 +610,8 @@ static void _vasal_engine_path_expand_group(const uint32_t group,
 				continue;
 			}
 			const uint32_t next = first + c;
-			const uint32_t step = ((_vasal_engine_path_group_cost[group]
-					+ _vasal_engine_path_group_cost[next]) / 2U)
+			const uint32_t step = ((_vasal_engine_path_group_step(group, d)
+					+ _vasal_engine_path_group_step(next, d)) / 2U)
 				* vasal_engine_path_region_side * _vasal_engine_path_length(d)
 				/ _vasal_engine_path_straight;
 			const uint32_t g = _vasal_engine_path_group_g[group] + step;
@@ -441,7 +629,10 @@ static void _vasal_engine_path_expand_group(const uint32_t group,
 }
 
 // Fills the corridor with the regions of the chain of groups ending at
-// best, from the start on, then their neighbours.
+// best, from the start on, then the regions around them, ring by ring out
+// to the margin, so that when the corridor is full only its outer edge is
+// missing.
+// spec: vintaines.movement#6
 static void _vasal_engine_path_fill_corridor(const uint32_t best) {
 	const uint32_t regions = _vasal_engine_path_columns
 		* _vasal_engine_path_rows;
@@ -460,12 +651,16 @@ static void _vasal_engine_path_fill_corridor(const uint32_t best) {
 		_vasal_engine_path_add_slot(_vasal_engine_path_region_x(region),
 			_vasal_engine_path_region_y(region));
 	}
-	for (size_t i = chain; 0U < i; i--) {
-		const uint32_t region = _vasal_engine_path_chain[i - 1U];
-		for (size_t d = 0U; d < 8U; d++) {
-			_vasal_engine_path_add_slot(
-				_vasal_engine_path_region_x(region) + _vasal_engine_path_dx[d],
-				_vasal_engine_path_region_y(region) + _vasal_engine_path_dy[d]);
+	for (int32_t ring = 1; ring <= _vasal_engine_path_margin; ring++) {
+		for (size_t i = chain; 0U < i; i--) {
+			const uint32_t region = _vasal_engine_path_chain[i - 1U];
+			const int32_t rx = _vasal_engine_path_region_x(region);
+			const int32_t ry = _vasal_engine_path_region_y(region);
+			for (int32_t dy = -ring; dy <= ring; dy++) {
+				for (int32_t dx = -ring; dx <= ring; dx++) {
+					_vasal_engine_path_add_slot(rx + dx, ry + dy);
+				}
+			}
 		}
 	}
 }
@@ -545,8 +740,241 @@ static vasal_engine_map_point_s _vasal_engine_path_point(const uint32_t node) {
 	return point;
 }
 
-// Writes the turning points of the path ending at node, from the start on,
-// and returns how many.
+// The integer square root, rounded down.
+static uint64_t _vasal_engine_path_root(const uint64_t value) {
+	uint64_t low = 0U;
+	uint64_t high = 0xffffffffU;
+	while (low < high) {
+		const uint64_t middle = (low + high + 1U) / 2U;
+		if ((middle * middle) <= value) {
+			low = middle;
+		} else {
+			high = middle - 1U;
+		}
+	}
+	return low;
+}
+
+// The distance from a coordinate to the edge of a tile in a direction: the
+// far edge for 1, the near edge otherwise.
+static int64_t _vasal_engine_path_to_edge(const int32_t at, const int32_t tile,
+		const int32_t direction) {
+	const int32_t precision = vasal_engine_map_precision;
+	int64_t distance = (int64_t)at - ((int64_t)tile * precision);
+	if (0 < direction) {
+		distance = (((int64_t)tile + 1) * precision) - (int64_t)at;
+	}
+	return distance;
+}
+
+// A straight line followed tile by tile: where it starts, the tile it is
+// in, the tile it ends in, which way it goes and how far along each axis,
+// the fraction of it (in 1/_vasal_engine_path_whole) where it entered the
+// tile it is in, and the time to walk it so far, before scaling by its
+// length.
+typedef struct _vasal_engine_path_line_s {
+	int32_t  from_x;
+	int32_t  from_y;
+	int32_t  x;
+	int32_t  y;
+	int32_t  end_x;
+	int32_t  end_y;
+	int32_t  step_x;
+	int32_t  step_y;
+	int64_t  span_x;
+	int64_t  span_y;
+	uint64_t entered;
+	uint64_t total;
+} _vasal_engine_path_line_s;
+
+// The way from one coordinate to another: 1, -1, or 0 when they are equal.
+static int32_t _vasal_engine_path_sign(const int32_t from, const int32_t to) {
+	int32_t sign = 0;
+	if (to > from) {
+		sign = 1;
+	} else if (to < from) {
+		sign = -1;
+	} else {
+		// Equal: no way to go.
+	}
+	return sign;
+}
+
+// The fraction of a line, in 1/_vasal_engine_path_whole, at which it has
+// run a distance along an axis it spans; all of it when it spans none.
+static uint64_t _vasal_engine_path_fraction(const int64_t distance,
+		const int64_t span) {
+	uint64_t fraction = _vasal_engine_path_whole;
+	if (0 < span) {
+		fraction = ((uint64_t)distance * _vasal_engine_path_whole)
+			/ (uint64_t)span;
+	}
+	return fraction;
+}
+
+// Moves a line into the next tile it crosses, adding the time spent in
+// the one it leaves. Returns whether the new tile is passable and, where
+// the line passes exactly through a tile corner, both tiles beside it.
+static bool_t _vasal_engine_path_advance(
+		_vasal_engine_path_line_s* const line) {
+	// How far along each axis the line runs from its start to the next
+	// edge of the tile it is in.
+	const int64_t edge_x =
+		_vasal_engine_path_to_edge(line->from_x, line->x, line->step_x);
+	const int64_t edge_y =
+		_vasal_engine_path_to_edge(line->from_y, line->y, line->step_y);
+	// Which edge the line meets first: negative for x, positive for y, 0
+	// for both at once, comparing edge_x / span_x with edge_y / span_y.
+	int64_t order = 1;
+	if (line->x != line->end_x) {
+		order = -1;
+		if (line->y != line->end_y) {
+			order = (edge_x * line->span_y) - (edge_y * line->span_x);
+		}
+	}
+	uint64_t left = _vasal_engine_path_fraction(edge_y, line->span_y);
+	if (order <= 0) {
+		left = _vasal_engine_path_fraction(edge_x, line->span_x);
+	}
+	line->total += (uint64_t)vasal_engine_path_step_cost((uint16_t)line->x,
+		(uint16_t)line->y) * (left - line->entered);
+	line->entered = left;
+	bool_t clear = true;
+	if (0 == order) {
+		clear = _vasal_engine_path_passable(line->x + line->step_x, line->y)
+			&& _vasal_engine_path_passable(line->x, line->y + line->step_y);
+		line->x += line->step_x;
+		line->y += line->step_y;
+	} else if (order < 0) {
+		line->x += line->step_x;
+	} else {
+		line->y += line->step_y;
+	}
+	return clear && _vasal_engine_path_passable(line->x, line->y);
+}
+
+// Follows a straight line between two positions, in
+// 1/vasal_engine_map_precision of a tile, through every tile it crosses,
+// exactly, in whole numbers. Returns whether they are all passable (at a
+// tile corner, both tiles beside it too) and sets the time to walk it:
+// each tile's step cost times the length of line in it, in
+// 1/vasal_engine_map_precision of a tile.
+static bool_t _vasal_engine_path_trace(const int32_t from_x,
+		const int32_t from_y, const int32_t to_x, const int32_t to_y,
+		uint64_t* const time) {
+	const vasal_engine_map_s* const map = _vasal_engine_path_map;
+	const int32_t precision = vasal_engine_map_precision;
+	const int32_t width = (int32_t)map->width * precision;
+	const int32_t height = (int32_t)map->height * precision;
+	*time = 0U;
+	if ((from_x < 0) || (from_y < 0) || (to_x < 0) || (to_y < 0)
+			|| (from_x >= width) || (from_y >= height) || (to_x >= width)
+			|| (to_y >= height)) {
+		return false;
+	}
+	_vasal_engine_path_line_s line;
+	line.from_x = from_x;
+	line.from_y = from_y;
+	line.x = from_x / precision;
+	line.y = from_y / precision;
+	line.end_x = to_x / precision;
+	line.end_y = to_y / precision;
+	line.step_x = _vasal_engine_path_sign(from_x, to_x);
+	line.step_y = _vasal_engine_path_sign(from_y, to_y);
+	line.span_x = (int64_t)line.step_x * ((int64_t)to_x - (int64_t)from_x);
+	line.span_y = (int64_t)line.step_y * ((int64_t)to_y - (int64_t)from_y);
+	line.entered = 0U;
+	line.total = 0U;
+	bool_t clear = _vasal_engine_path_passable(line.x, line.y);
+	while (clear && ((line.x != line.end_x) || (line.y != line.end_y))) {
+		clear = _vasal_engine_path_advance(&line);
+	}
+	if (clear) {
+		line.total += (uint64_t)vasal_engine_path_step_cost(
+			(uint16_t)line.x, (uint16_t)line.y)
+			* (_vasal_engine_path_whole - line.entered);
+		const int64_t square = (line.span_x * line.span_x)
+			+ (line.span_y * line.span_y);
+		const uint64_t length = _vasal_engine_path_root((uint64_t)square);
+		*time = (line.total * length) / _vasal_engine_path_whole;
+	}
+	return clear;
+}
+
+// spec: vintaines.movement#5 vintaines.movement#7
+bool_t vasal_engine_path_clear(const int32_t from_x, const int32_t from_y,
+	const int32_t to_x, const int32_t to_y) {
+	uint64_t time = 0U;
+	return (NULL != _vasal_engine_path_map)
+		&& _vasal_engine_path_trace(from_x, from_y, to_x, to_y, &time);
+}
+
+// The center of a tile, in 1/vasal_engine_map_precision of a tile.
+static int32_t _vasal_engine_path_center(const uint16_t coordinate) {
+	return ((int32_t)coordinate * vasal_engine_map_precision)
+		+ (vasal_engine_map_precision / 2);
+}
+
+// Whether the straight line between two tiles of the trail can replace
+// the trail between them: it crosses only passable tiles and takes no
+// longer to walk.
+static bool_t _vasal_engine_path_direct(const size_t from, const size_t to) {
+	const vasal_engine_map_point_s a = _vasal_engine_path_trail[from];
+	const vasal_engine_map_point_s b = _vasal_engine_path_trail[to];
+	uint64_t time = 0U;
+	const bool_t clear = _vasal_engine_path_trace(
+		_vasal_engine_path_center(a.x), _vasal_engine_path_center(a.y),
+		_vasal_engine_path_center(b.x), _vasal_engine_path_center(b.y),
+		&time);
+	return clear && (time <= (_vasal_engine_path_elapsed[to]
+		- _vasal_engine_path_elapsed[from]));
+}
+
+// Whether the trail turns at a tile, or ends there.
+static bool_t _vasal_engine_path_turns(const size_t at, const size_t length) {
+	if ((at + 1U) >= length) {
+		return true;
+	}
+	const vasal_engine_map_point_s before = _vasal_engine_path_trail[at - 1U];
+	const vasal_engine_map_point_s point = _vasal_engine_path_trail[at];
+	const vasal_engine_map_point_s after = _vasal_engine_path_trail[at + 1U];
+	return (((int32_t)point.x - (int32_t)before.x)
+			!= ((int32_t)after.x - (int32_t)point.x))
+		|| (((int32_t)point.y - (int32_t)before.y)
+			!= ((int32_t)after.y - (int32_t)point.y));
+}
+
+// The farthest tile of the trail after from that a straight line from it
+// can reach in place of the trail: the last of the turning points that
+// can be, one after the other, then the farthest tile of the straight run
+// to the first one that can't, found by halving.
+static size_t _vasal_engine_path_reach(const size_t from,
+		const size_t length) {
+	size_t reach = from + 1U;
+	size_t blocked = length;
+	for (size_t at = from + 2U; (at < length) && (length == blocked); at++) {
+		if (_vasal_engine_path_turns(at, length)) {
+			if (_vasal_engine_path_direct(from, at)) {
+				reach = at;
+			} else {
+				blocked = at;
+			}
+		}
+	}
+	while ((blocked < length) && ((reach + 1U) < blocked)) {
+		const size_t middle = (reach + blocked) / 2U;
+		if (_vasal_engine_path_direct(from, middle)) {
+			reach = middle;
+		} else {
+			blocked = middle;
+		}
+	}
+	return reach;
+}
+
+// Writes the points of the path ending at node, pulled straight, from the
+// start on, and returns how many.
+// spec: vintaines.movement#5 map.terrain#8
 static size_t _vasal_engine_path_points(const uint32_t end,
 		vasal_engine_map_point_s* const points, const size_t capacity) {
 	size_t length = 0U;
@@ -555,23 +983,29 @@ static size_t _vasal_engine_path_points(const uint32_t end,
 		_vasal_engine_path_trail[length] = _vasal_engine_path_point(n);
 		length++;
 	}
+	for (size_t i = 0U; i < (length / 2U); i++) {
+		const vasal_engine_map_point_s swap = _vasal_engine_path_trail[i];
+		_vasal_engine_path_trail[i] =
+			_vasal_engine_path_trail[length - 1U - i];
+		_vasal_engine_path_trail[length - 1U - i] = swap;
+	}
+	_vasal_engine_path_elapsed[0] = 0U;
+	for (size_t i = 1U; i < length; i++) {
+		const vasal_engine_map_point_s a = _vasal_engine_path_trail[i - 1U];
+		const vasal_engine_map_point_s b = _vasal_engine_path_trail[i];
+		uint64_t time = 0U;
+		(void)_vasal_engine_path_trace(_vasal_engine_path_center(a.x),
+			_vasal_engine_path_center(a.y), _vasal_engine_path_center(b.x),
+			_vasal_engine_path_center(b.y), &time);
+		_vasal_engine_path_elapsed[i] = _vasal_engine_path_elapsed[i - 1U]
+			+ time;
+	}
 	size_t count = 0U;
-	for (size_t i = length - 1U; (0U < i) && (count < capacity); i--) {
-		const vasal_engine_map_point_s point = _vasal_engine_path_trail[i - 1U];
-		bool_t turn = (1U == i);
-		if (!turn) {
-			const vasal_engine_map_point_s before = _vasal_engine_path_trail[i];
-			const vasal_engine_map_point_s after =
-				_vasal_engine_path_trail[i - 2U];
-			turn = (((int32_t)point.x - (int32_t)before.x)
-					!= ((int32_t)after.x - (int32_t)point.x))
-				|| (((int32_t)point.y - (int32_t)before.y)
-					!= ((int32_t)after.y - (int32_t)point.y));
-		}
-		if (turn) {
-			points[count] = point;
-			count++;
-		}
+	size_t from = 0U;
+	while (((from + 1U) < length) && (count < capacity)) {
+		from = _vasal_engine_path_reach(from, length);
+		points[count] = _vasal_engine_path_trail[from];
+		count++;
 	}
 	return count;
 }
