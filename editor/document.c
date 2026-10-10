@@ -138,6 +138,8 @@ bool_t vasal_editor_document_create(const uint16_t width,
 			height)) {
 		return false;
 	}
+	// spec: editor.tools#7
+	vasal_engine_map_standard_terrains(&_vasal_editor_document_current);
 	_vasal_editor_document_forget();
 	return true;
 }

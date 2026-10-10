@@ -6,7 +6,8 @@
 ///
 /// Layout: the magic word "vasalmap", the format version (u16), width and
 /// height (u16 each), the map's name, the terrain types (a u8 count, then
-/// name, color u32, speed u16, passable u8 each), one byte per tile, then
+/// name, color u32, speed u16, sight u16, passable u8 each), one byte per
+/// tile, then
 /// the settlements, spawn areas, bandit camps and decorations (a u16 count
 /// each, then their fields), and last a CRC-32 (u32) of everything before
 /// it. Names take vasal_engine_map_name_capacity bytes, zero-padded.
@@ -17,11 +18,11 @@
 #include "engine/map.h"
 
 /// The format version this code writes and reads.
-#define vasal_engine_mapfile_version 1U
+#define vasal_engine_mapfile_version 2U
 
 /// The largest map file, in bytes.
 #define vasal_engine_mapfile_capacity                                         \
-	(64U + (vasal_engine_map_terrains_max * 40U)                               \
+	(64U + (vasal_engine_map_terrains_max * 48U)                               \
 		+ (vasal_engine_map_side_max * vasal_engine_map_side_max)             \
 		+ (vasal_engine_map_settlements_max * 64U)                            \
 		+ (vasal_engine_map_spawns_max * 8U)                                  \

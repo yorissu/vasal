@@ -24,7 +24,7 @@ static vasal_engine_map_s* _vasal_tests_engine_mapfile_sample(void) {
 	};
 	const vasal_engine_map_terrain_s tall_grass = {
 		.name = "tall grass", .color = 0x60a040ffU, .speed = 60U,
-		.passable = true
+		.sight = 70U, .passable = true
 	};
 	map->terrains[1] = water;
 	map->terrains[2] = tall_grass;
@@ -91,6 +91,7 @@ cairo_test_new(engine_mapfile, writes_and_reads_back_unchanged) {
 	cairo_assert_true(0 == strcmp(b->terrains[1].name, "water"));
 	cairo_assert_false(b->terrains[1].passable);
 	cairo_assert_eq(b->terrains[2].speed, 60U);
+	cairo_assert_eq(b->terrains[2].sight, 70U);
 	cairo_assert_true(b->terrains[2].passable);
 	cairo_assert_eq(0, memcmp(a->tiles, b->tiles, 40U * 30U));
 	cairo_assert_eq(b->settlement_count, 1U);
@@ -105,13 +106,14 @@ cairo_test_new(engine_mapfile, writes_and_reads_back_unchanged) {
 // spec: mapfile.format#2
 cairo_test_new(engine_mapfile, refuses_another_version) {
 	const size_t size = _vasal_tests_engine_mapfile_write();
-	_vasal_tests_engine_mapfile_file[8] = 2U;
+	const uint16_t other = vasal_engine_mapfile_version + 1U;
+	_vasal_tests_engine_mapfile_file[8] = (uint8_t)other;
 	_vasal_tests_engine_mapfile_reseal(size);
 	uint16_t version = 0U;
 	cairo_assert_eq(vasal_engine_mapfile_read(_vasal_tests_engine_mapfile_file,
 		size, &_vasal_tests_engine_mapfile_read_back, &version),
 		vasal_engine_mapfile_read_version);
-	cairo_assert_eq(version, 2U);
+	cairo_assert_eq(version, other);
 }
 
 // spec: mapfile.validation#1
@@ -166,9 +168,9 @@ cairo_test_new(engine_mapfile, refuses_positions_outside_the_map) {
 cairo_test_new(engine_mapfile, refuses_counts_above_the_limits) {
 	const size_t size = _vasal_tests_engine_mapfile_write();
 	// The sample's camp count: after the header (46 bytes), 3 terrain
-	// types (1 + 3 * 39), 40 * 30 tiles, 1 settlement (2 + 57) and 1 spawn
+	// types (1 + 3 * 41), 40 * 30 tiles, 1 settlement (2 + 57) and 1 spawn
 	// area (2 + 6).
-	const size_t camps = 46U + 118U + 1200U + 59U + 8U;
+	const size_t camps = 46U + 124U + 1200U + 59U + 8U;
 	cairo_assert_eq(_vasal_tests_engine_mapfile_file[camps], 1U);
 	_vasal_tests_engine_mapfile_file[camps] = 0xffU;
 	_vasal_tests_engine_mapfile_file[camps + 1U] = 0xffU;
@@ -211,4 +213,17 @@ cairo_test_new(engine_map, reports_impassable_and_overlapping_places) {
 		vasal_engine_map_problem_settlement_impassable);
 	cairo_assert_eq(findings[1].problem,
 		vasal_engine_map_problem_capture_overlap);
+}
+
+// spec: mapfile.validation#1 map.terrain#9
+cairo_test_new(engine_mapfile, refuses_a_sight_above_the_limit) {
+	const size_t size = _vasal_tests_engine_mapfile_write();
+	// The first terrain type's sight: after the header (46 bytes), the
+	// count (1), its name (32), color (4) and speed (2).
+	const size_t sight = 46U + 1U + 32U + 4U + 2U;
+	cairo_assert_eq(_vasal_tests_engine_mapfile_file[sight], 100U);
+	_vasal_tests_engine_mapfile_file[sight] = 0xffU;
+	_vasal_tests_engine_mapfile_reseal(size);
+	cairo_assert_eq(_vasal_tests_engine_mapfile_read(size),
+		vasal_engine_mapfile_read_value);
 }

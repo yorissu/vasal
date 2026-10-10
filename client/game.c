@@ -175,24 +175,35 @@ bool_t vasal_client_game_select(vasal_client_game_s* const game,
 	return true;
 }
 
-// spec: map.sight#1 map.sight#2
+// spec: map.sight#1 map.terrain#9
+float vasal_client_game_eye(const vasal_client_game_s* const game,
+	const size_t group, const size_t troop, float* const x, float* const y) {
+	vasal_client_game_troop_at(game, group, troop, x, y);
+	const vasal_engine_map_s* const map = game->world->map;
+	const float tile_x = fminf(fmaxf(*x, 0.0f), (float)map->width - 1.0f);
+	const float tile_y = fminf(fmaxf(*y, 0.0f), (float)map->height - 1.0f);
+	const vasal_engine_map_terrain_s* const terrain = vasal_engine_map_terrain(
+		map, (uint16_t)tile_x, (uint16_t)tile_y);
+	return vasal_client_game_sight * (float)terrain->sight / 100.0f;
+}
+
+// spec: map.sight#1 map.sight#2 map.terrain#9
 float vasal_client_game_sight_at(const vasal_client_game_s* const game,
 	const float x, const float y) {
-	float nearest = 1.0e9f;
+	float seen = 0.0f;
 	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
 		const vasal_engine_world_group_s* const group =
 			vasal_client_game_group(game, g);
 		for (size_t t = 0U; t < group->troop_count; t++) {
 			float tx = 0.0f;
 			float ty = 0.0f;
-			vasal_client_game_troop_at(game, g, t, &tx, &ty);
+			const float radius = vasal_client_game_eye(game, g, t, &tx, &ty);
 			const float dx = tx - x;
 			const float dy = ty - y;
-			nearest = fminf(nearest, (dx * dx) + (dy * dy));
+			seen = fmaxf(seen, radius - sqrtf((dx * dx) + (dy * dy)));
 		}
 	}
-	return fminf(fmaxf(vasal_client_game_sight - sqrtf(nearest), 0.0f),
-		1.0f);
+	return fminf(fmaxf(seen, 0.0f), 1.0f);
 }
 
 // spec: vintaines.select#8

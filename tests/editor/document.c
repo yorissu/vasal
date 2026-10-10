@@ -97,3 +97,20 @@ cairo_test_new(editor_document, empty_operation_is_dropped) {
 	cairo_assert_true(vasal_editor_document_undo());
 	cairo_assert_false(vasal_editor_document_undo());
 }
+
+// spec: editor.tools#7 map.terrain#9
+cairo_test_new(editor_document, new_maps_have_the_standard_terrains) {
+	(void)vasal_editor_document_create(30U, 20U);
+	const vasal_engine_map_s* const map = vasal_editor_document_map();
+	cairo_assert_eq(map->terrain_count, (uint8_t)vasal_engine_map_standards);
+	const vasal_engine_map_terrain_s* const forest =
+		&map->terrains[vasal_engine_map_standard_forest];
+	cairo_assert_true(0 == strcmp(forest->name, "forest"));
+	cairo_assert_true(forest->passable);
+	cairo_assert_lt(forest->speed, 100U);
+	cairo_assert_lt(forest->sight, 100U);
+	cairo_assert_false(
+		map->terrains[vasal_engine_map_standard_water].passable);
+	// The map itself is grass.
+	cairo_assert_eq(map->tiles[0], (uint8_t)vasal_engine_map_standard_grass);
+}

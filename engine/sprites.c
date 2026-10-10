@@ -4,17 +4,17 @@
 /// checkerboard reached from the sheet's edges, stopping at the sprites'
 /// dark outlines, became transparent.
 
-#include "client/sprites.h"
+#include "engine/sprites.h"
 
 // The first sprite of each row of the sheet.
-#define _vasal_client_sprites_villages 0U
-#define _vasal_client_sprites_towns 8U
-#define _vasal_client_sprites_cities 14U
-#define _vasal_client_sprites_castles 20U
-#define _vasal_client_sprites_lone 27U
+#define _vasal_engine_sprites_villages 0U
+#define _vasal_engine_sprites_towns 8U
+#define _vasal_engine_sprites_cities 14U
+#define _vasal_engine_sprites_castles 20U
+#define _vasal_engine_sprites_lone 27U
 
-static const vasal_client_sprites_rect_s
-	_vasal_client_sprites_rects[vasal_client_sprites_count] = {
+static const vasal_engine_sprites_rect_s
+	_vasal_engine_sprites_rects[vasal_engine_sprites_count] = {
 	// Villages.
 	{ 37, 90, 141, 106 }, { 237, 67, 115, 131 }, { 428, 80, 148, 117 },
 	{ 641, 54, 153, 142 }, { 856, 94, 132, 100 }, { 1026, 86, 131, 109 },
@@ -39,19 +39,19 @@ static const vasal_client_sprites_rect_s
 // Each settlement type's first sprite and how many it has, in the order
 // of vasal_engine_map_settlement_type_e: village, town, castle, city.
 static const size_t
-	_vasal_client_sprites_types[vasal_engine_map_settlement_types][2] = {
-	{ _vasal_client_sprites_villages, 8U },
-	{ _vasal_client_sprites_towns, 6U },
-	{ _vasal_client_sprites_castles, 7U },
-	{ _vasal_client_sprites_cities, 6U }
+	_vasal_engine_sprites_types[vasal_engine_map_settlement_types][2] = {
+	{ _vasal_engine_sprites_villages, 8U },
+	{ _vasal_engine_sprites_towns, 6U },
+	{ _vasal_engine_sprites_castles, 7U },
+	{ _vasal_engine_sprites_cities, 6U }
 };
 
-vasal_client_sprites_rect_s vasal_client_sprites_rect(const size_t sprite) {
-	return _vasal_client_sprites_rects[sprite % vasal_client_sprites_count];
+vasal_engine_sprites_rect_s vasal_engine_sprites_rect(const size_t sprite) {
+	return _vasal_engine_sprites_rects[sprite % vasal_engine_sprites_count];
 }
 
-// spec: client.render#7
-size_t vasal_client_sprites_settlement(
+// spec: client.render#7 editor.tools#6
+size_t vasal_engine_sprites_settlement(
 	const vasal_engine_map_settlement_s* const settlement) {
 	size_t type = (size_t)settlement->type;
 	if (type >= (size_t)vasal_engine_map_settlement_types) {
@@ -61,20 +61,29 @@ size_t vasal_client_sprites_settlement(
 	const uint32_t hash = ((uint32_t)settlement->position.x * 73856093U)
 		^ ((uint32_t)settlement->position.y * 19349663U);
 	const uint32_t mixed = hash >> 4U;
-	return _vasal_client_sprites_types[type][0]
-		+ ((size_t)mixed % _vasal_client_sprites_types[type][1]);
+	return _vasal_engine_sprites_types[type][0]
+		+ ((size_t)mixed % _vasal_engine_sprites_types[type][1]);
 }
 
-// spec: client.render#7
-size_t vasal_client_sprites_decoration(
+// spec: client.render#7 editor.tools#6
+size_t vasal_engine_sprites_decoration(
 	const vasal_engine_map_decoration_s* const decoration) {
-	return _vasal_client_sprites_lone
-		+ ((size_t)decoration->kind % vasal_client_sprites_structures);
+	return _vasal_engine_sprites_lone
+		+ ((size_t)decoration->kind % vasal_engine_sprites_structures);
 }
 
-void vasal_client_sprites_foot(const size_t sprite, float* const x,
-	float* const y) {
-	const vasal_client_sprites_rect_s rect = vasal_client_sprites_rect(sprite);
-	*x = (float)rect.width * 0.5f;
-	*y = (float)rect.height - ((float)rect.width * 0.25f);
+void vasal_engine_sprites_foot(const size_t sprite, int32_t* const x,
+	int32_t* const y) {
+	const vasal_engine_sprites_rect_s rect = vasal_engine_sprites_rect(sprite);
+	*x = rect.width / 2;
+	*y = rect.height - (rect.width / 4);
+}
+
+size_t vasal_engine_sprites_type(
+	const vasal_engine_map_settlement_type_e type) {
+	size_t index = (size_t)type;
+	if (index >= (size_t)vasal_engine_map_settlement_types) {
+		index = 0U;
+	}
+	return _vasal_engine_sprites_types[index][0];
 }

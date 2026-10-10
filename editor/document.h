@@ -16,7 +16,8 @@
 /// The map being edited.
 vasal_engine_map_s* vasal_editor_document_map(void);
 
-/// Starts a new, empty map and forgets the history. Returns false when a
+/// Starts a new map of grass, with the standard terrain types ready to
+/// paint (engine/map.h), and forgets the history. Returns false when a
 /// side is 0 or too long.
 bool_t vasal_editor_document_create(const uint16_t width,
 	const uint16_t height);

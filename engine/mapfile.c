@@ -45,6 +45,7 @@ size_t vasal_engine_mapfile_write(const vasal_engine_map_s* const map,
 		_vasal_engine_mapfile_write_name(&writer, terrain->name);
 		vasal_engine_bytes_write_u32(&writer, terrain->color);
 		vasal_engine_bytes_write_u16(&writer, terrain->speed);
+		vasal_engine_bytes_write_u16(&writer, terrain->sight);
 		vasal_engine_bytes_write_u8(&writer, terrain->passable ? 1U : 0U);
 	}
 	vasal_engine_bytes_write(&writer, map->tiles,
@@ -132,6 +133,7 @@ static bool_t _vasal_engine_mapfile_read_terrains(
 			_vasal_engine_mapfile_read_name(reader, terrain->name);
 		terrain->color = vasal_engine_bytes_read_u32(reader);
 		terrain->speed = vasal_engine_bytes_read_u16(reader);
+		terrain->sight = vasal_engine_bytes_read_u16(reader);
 		const uint8_t passable = vasal_engine_bytes_read_u8(reader);
 		terrain->passable = 1U == passable;
 		// A passable terrain has a speed, an impassable one none.
@@ -140,7 +142,8 @@ static bool_t _vasal_engine_mapfile_read_terrains(
 			speed_valid = (0U < terrain->speed)
 				&& (vasal_engine_map_speed_max >= terrain->speed);
 		}
-		if (!named || (1U < passable) || !speed_valid) {
+		if (!named || (1U < passable) || !speed_valid
+				|| (vasal_engine_map_sight_max < terrain->sight)) {
 			return false;
 		}
 	}

@@ -9,30 +9,13 @@
 #include <string.h>
 
 enum {
-	_vasal_client_demo_grass,
-	_vasal_client_demo_water,
-	_vasal_client_demo_forest,
-	_vasal_client_demo_tall,
-	_vasal_client_demo_short,
-	_vasal_client_demo_road
+	_vasal_client_demo_grass = vasal_engine_map_standard_grass,
+	_vasal_client_demo_short = vasal_engine_map_standard_short_grass,
+	_vasal_client_demo_tall = vasal_engine_map_standard_tall_grass,
+	_vasal_client_demo_forest = vasal_engine_map_standard_forest,
+	_vasal_client_demo_road = vasal_engine_map_standard_road,
+	_vasal_client_demo_water = vasal_engine_map_standard_water
 };
-
-static void _vasal_client_demo_terrain(vasal_engine_map_s* const map,
-		const size_t index, const char* const name, const uint32_t color,
-		const uint16_t speed) {
-	vasal_engine_map_terrain_s* const terrain = &map->terrains[index];
-	size_t length = strlen(name);
-	if (length > (vasal_engine_map_name_capacity - 1U)) {
-		length = vasal_engine_map_name_capacity - 1U;
-	}
-	for (size_t i = 0U; i < length; i++) {
-		terrain->name[i] = name[i];
-	}
-	terrain->name[length] = '\0';
-	terrain->color = color;
-	terrain->speed = speed;
-	terrain->passable = 0U < speed;
-}
 
 static void _vasal_client_demo_set(vasal_engine_map_s* const map,
 		const int32_t x, const int32_t y, const uint8_t terrain) {
@@ -88,7 +71,7 @@ static void _vasal_client_demo_settlements(vasal_engine_map_s* const map) {
 	_vasal_client_demo_settlement(map, "Dunmere",
 		vasal_engine_map_settlement_city, 205U, 135U);
 	// Kinds: 0 to 3 watchtowers, 4 to 6 chapels, 7 a windmill, 8 a bridge,
-	// 9 a ruin (client/sprites.h).
+	// 9 a ruin (engine/sprites.h).
 	static const uint16_t structures[6][3] = {
 		{ 112U, 116U, 0U }, { 140U, 60U, 2U }, { 124U, 123U, 8U },
 		{ 40U, 128U, 7U }, { 95U, 95U, 4U }, { 150U, 200U, 9U }
@@ -105,13 +88,7 @@ void vasal_client_demo_make(vasal_engine_map_s* const map) {
 	(void)vasal_engine_map_clear(map, vasal_client_demo_side,
 		vasal_client_demo_side);
 	(void)strcpy(map->name, "demonstration");
-	_vasal_client_demo_terrain(map, 0U, "grass", 0x6a9a3cffU, 100U);
-	_vasal_client_demo_terrain(map, 1U, "water", 0x3d6fb0ffU, 0U);
-	_vasal_client_demo_terrain(map, 2U, "forest", 0x2f5a2affU, 0U);
-	_vasal_client_demo_terrain(map, 3U, "tall grass", 0x9cad45ffU, 45U);
-	_vasal_client_demo_terrain(map, 4U, "short grass", 0x82a845ffU, 80U);
-	_vasal_client_demo_terrain(map, 5U, "road", 0xb59a6bffU, 100U);
-	map->terrain_count = 6U;
+	vasal_engine_map_standard_terrains(map);
 
 	_vasal_client_demo_patch(map, 90, 60, 22, 14, _vasal_client_demo_tall);
 	_vasal_client_demo_patch(map, 70, 180, 18, 24, _vasal_client_demo_short);
@@ -137,9 +114,10 @@ void vasal_client_demo_make(vasal_engine_map_s* const map) {
 
 	_vasal_client_demo_settlements(map);
 
-	const vasal_engine_map_spawn_s spawn = {
-		{ vasal_client_demo_spawn_x, vasal_client_demo_spawn_y }, 6U
-	};
+	vasal_engine_map_spawn_s spawn;
+	spawn.position.x = vasal_client_demo_spawn_x;
+	spawn.position.y = vasal_client_demo_spawn_y;
+	spawn.radius = 6U;
 	map->spawns[0] = spawn;
 	map->spawn_count = 1U;
 }

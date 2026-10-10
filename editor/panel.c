@@ -28,6 +28,7 @@ enum {
 	_vasal_editor_panel_terrain_speed,
 	_vasal_editor_panel_terrain_color,
 	_vasal_editor_panel_terrain_passable,
+	_vasal_editor_panel_terrain_sight,
 	_vasal_editor_panel_name,
 	_vasal_editor_panel_type,
 	_vasal_editor_panel_radius,
@@ -221,7 +222,7 @@ static void _vasal_editor_panel_remove_terrain(
 }
 
 // The terrain types, the one painted, its values, and the brush.
-// spec: editor.tools#4
+// spec: editor.tools#4 map.terrain#9
 static void _vasal_editor_panel_terrain(vasal_editor_state_s* const state,
 		_vasal_editor_panel_cursor_s* const cursor) {
 	vasal_engine_map_s* const map = vasal_editor_document_map();
@@ -275,6 +276,19 @@ static void _vasal_editor_panel_terrain(vasal_editor_state_s* const state,
 		vasal_editor_document_changed();
 		vasal_editor_document_end();
 	}
+	int sight = (int)terrain->sight;
+	// raygui writes the value through its pointer, which cppcheck can't
+	// see.
+	// cppcheck-suppress knownConditionTrueFalse
+	if (_vasal_editor_panel_number(cursor, "Sight (percent)", &sight, 0,
+			(int)vasal_engine_map_sight_max,
+			_vasal_editor_panel_terrain_sight)) {
+		vasal_editor_document_begin(_vasal_editor_panel_key(
+			_vasal_editor_panel_terrain_sight, index));
+		terrain->sight = (uint16_t)sight;
+		vasal_editor_document_changed();
+		vasal_editor_document_end();
+	}
 	Color color = {
 		(unsigned char)(terrain->color >> 24U),
 		(unsigned char)(terrain->color >> 16U),
@@ -305,6 +319,7 @@ static void _vasal_editor_panel_terrain(vasal_editor_state_s* const state,
 			(void)memcpy(added->name, "new terrain", 12U);
 			added->color = 0x808080ffU;
 			added->speed = 100U;
+			added->sight = 100U;
 			added->passable = true;
 			state->terrain = map->terrain_count;
 			map->terrain_count++;

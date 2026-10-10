@@ -8,7 +8,7 @@
 #include "client/view.h"
 #include "client/depth.h"
 #include "client/ground.h"
-#include "client/sprites.h"
+#include "engine/sprites.h"
 
 #include <raylib.h>
 
@@ -30,7 +30,7 @@
 		* vasal_engine_world_troops) + vasal_engine_map_settlements_max       \
 		+ vasal_engine_map_decorations_max)
 
-// The sheet of settlement and structure sprites (client/sprites.h).
+// The sheet of settlement and structure sprites (engine/sprites.h).
 static Texture2D _vasal_client_view_sheet;
 static bool_t _vasal_client_view_sheet_loaded = false;
 
@@ -250,9 +250,9 @@ static size_t _vasal_client_view_sprite(const vasal_client_game_s* const game,
 	float sx = 0.0f;
 	float sy = 0.0f;
 	vasal_client_camera_to_screen(camera, width, height, x, y, &sx, &sy);
-	const vasal_client_sprites_rect_s rect = vasal_client_sprites_rect(sprite);
+	const vasal_engine_sprites_rect_s rect = vasal_engine_sprites_rect(sprite);
 	const float reach = ((float)rect.width + (float)rect.height)
-		/ vasal_client_sprites_pixels_per_tile * camera->scale;
+		/ (float)vasal_engine_sprites_pixels_per_tile * camera->scale;
 	if (!_vasal_client_view_on_screen(sx, sy, width, height, reach)) {
 		return count;
 	}
@@ -278,13 +278,13 @@ static size_t _vasal_client_view_structures(
 	for (size_t i = 0U; i < map->settlement_count; i++) {
 		total = _vasal_client_view_sprite(game, camera, width, height,
 			map->settlements[i].position,
-			vasal_client_sprites_settlement(&map->settlements[i]), things,
+			vasal_engine_sprites_settlement(&map->settlements[i]), things,
 			total);
 	}
 	for (size_t i = 0U; i < map->decoration_count; i++) {
 		total = _vasal_client_view_sprite(game, camera, width, height,
 			map->decorations[i].position,
-			vasal_client_sprites_decoration(&map->decorations[i]), things,
+			vasal_engine_sprites_decoration(&map->decorations[i]), things,
 			total);
 	}
 	return total;
@@ -297,23 +297,25 @@ static void _vasal_client_view_draw_sprite(
 		const vasal_client_depth_troop_s* const thing, const float sx,
 		const float sy) {
 	if (!_vasal_client_view_sheet_loaded) {
-		_vasal_client_view_sheet = LoadTexture(vasal_client_sprites_file);
+		_vasal_client_view_sheet = LoadTexture(vasal_engine_sprites_file);
 		GenTextureMipmaps(&_vasal_client_view_sheet);
 		SetTextureFilter(_vasal_client_view_sheet,
 			TEXTURE_FILTER_TRILINEAR);
 		_vasal_client_view_sheet_loaded = true;
 	}
 	const size_t sprite = (size_t)thing->sprite;
-	const vasal_client_sprites_rect_s rect = vasal_client_sprites_rect(sprite);
-	float foot_x = 0.0f;
-	float foot_y = 0.0f;
-	vasal_client_sprites_foot(sprite, &foot_x, &foot_y);
-	const float size = camera->scale / vasal_client_sprites_pixels_per_tile;
+	const vasal_engine_sprites_rect_s rect = vasal_engine_sprites_rect(sprite);
+	int32_t foot_x = 0;
+	int32_t foot_y = 0;
+	vasal_engine_sprites_foot(sprite, &foot_x, &foot_y);
+	const float size = camera->scale
+		/ (float)vasal_engine_sprites_pixels_per_tile;
 	const Rectangle source = {
 		(float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height
 	};
 	const Rectangle target = {
-		sx - (foot_x * size), sy - (foot_y * size), (float)rect.width * size,
+		sx - ((float)foot_x * size), sy - ((float)foot_y * size),
+		(float)rect.width * size,
 		(float)rect.height * size
 	};
 	const float light = 150.0f + (105.0f * thing->sight);

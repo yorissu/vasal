@@ -6,7 +6,9 @@
 /// pointer.
 
 #include "editor/canvas.h"
+#include "editor/art.h"
 #include "editor/document.h"
+#include "engine/sprites.h"
 
 #include <math.h>
 
@@ -345,6 +347,19 @@ void vasal_editor_canvas_fit(vasal_editor_state_s* const state,
 		area.height / (float)map->height) * 0.95f;
 }
 
+// Draws a settlement's or decoration's sprite standing on its tile, at
+// least big enough to see, framed when it is selected.
+// spec: editor.tools#6
+static void _vasal_editor_canvas_sprite(const vasal_editor_state_s* const state,
+		const Vector2 foot, const size_t sprite, const bool_t selected) {
+	const float pixels_per_tile = fmaxf(state->zoom, 3.0f);
+	vasal_editor_art_standing(sprite, foot, pixels_per_tile, WHITE);
+	if (selected) {
+		DrawRectangleLinesEx(vasal_editor_art_bounds(sprite, foot,
+			pixels_per_tile), 2.0f, _vasal_editor_canvas_selected);
+	}
+}
+
 // Draws the objects of one kind; the selected one, when it is of the
 // current tool's kind, stands out.
 static void _vasal_editor_canvas_objects(
@@ -364,8 +379,9 @@ static void _vasal_editor_canvas_objects(
 		if (vasal_editor_state_tool_settlement == kind) {
 			DrawCircleLinesV(center,
 				(float)map->settlements[i].radius * state->zoom, shown);
-			DrawRectangleV((Vector2){ center.x - size, center.y - size },
-				(Vector2){ 2.0f * size, 2.0f * size }, shown);
+			_vasal_editor_canvas_sprite(state, center,
+				vasal_engine_sprites_settlement(&map->settlements[i]),
+				selected);
 			if (state->zoom >= 4.0f) {
 				const float text_x = center.x + size;
 				const float text_y = center.y + size;
@@ -381,7 +397,9 @@ static void _vasal_editor_canvas_objects(
 				(Vector2){ center.x - size, center.y + size },
 				(Vector2){ center.x + size, center.y + size }, shown);
 		} else {
-			DrawCircleV(center, size / 2.0f, shown);
+			_vasal_editor_canvas_sprite(state, center,
+				vasal_engine_sprites_decoration(&map->decorations[i]),
+				selected);
 		}
 	}
 }

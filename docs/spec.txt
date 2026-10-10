@@ -377,10 +377,12 @@ story map.terrain
 	description: Every tile has a terrain type, and terrain decides where
 		troops can go and how fast. Each map defines its own terrain types
 		in the editor, with their values, and stores them in its file: for
-		example forest and water that vintaines can't pass, tall grass
-		that slows them a lot, short grass that slows them a little, and
-		roads at full speed. Decorations (a lone tree, a rock) are only
-		drawn and change nothing.
+		example water that vintaines can't pass, forest and tall grass that
+		slow them a lot and hide what is around (troops standing in them
+		see less far), short grass that slows them a little, and roads at
+		full speed. The editor starts new maps with such standard types.
+		Decorations (a lone tree, a rock) are only drawn and change
+		nothing.
 	criterion 1: unit
 		then: No troop or NPC ever stands on an impassable tile.
 	criterion 2: scenario
@@ -396,8 +398,9 @@ story map.terrain
 		then: The vintaine takes the road: paths are the fastest, not the
 			shortest.
 	criterion 5: unit
-		then: A map's terrain types, with their passability and speed, are
-			stored in its file; there are no terrain values outside it.
+		then: A map's terrain types, with their passability, speed and
+			sight, are stored in its file; there are no terrain values
+			outside it.
 	criterion 6: unit proposed
 		given: A vintaine in step whose troops stand on different terrain.
 		then: Each troop moves at the vintaine's pace times the speed of
@@ -414,6 +417,11 @@ story map.terrain
 			points, with short grass around it.
 		then: Pulling the path straight never cuts through the tall grass
 			when going around it is faster.
+	criterion 9: unit
+		given: A terrain type with a sight of 50 percent.
+		then: A troop standing on it sees half as far as usual.
+		why: The user's request of 2026-10-11: forest and grass affect
+			travel speed and visibility.
 
 story map.camera
 	title: Camera and view
@@ -516,7 +524,8 @@ story map.sight
 	description: A player sees only what their troops see, and what their
 		allies' troops see (map.visibility). There is no scouting mechanic
 		of its own: every troop sees a circle around it, whose radius
-		depends on its type, and the player's sight is all those circles
+		depends on its type and on the sight of the terrain it stands on
+		(map.terrain#9), and the player's sight is all those circles
 		together. Inside it the player sees the terrain in
 		full color and every troop and NPC, in the main view and on the
 		minimap. Outside it the terrain is still drawn, grayed, and no
@@ -2219,7 +2228,8 @@ story editor.tools
 	description: The editor defines the map's terrain types and their
 		values, paints terrain, and places, moves and deletes settlements,
 		spawn areas, bandit camps and decorations. For each settlement it
-		sets the type, the name, the values and the flags.
+		sets the type, the name, the values and the flags. Settlements and
+		decorations look as in the game.
 	criterion 1: review
 		then: Every kind of map content can be added, moved and deleted.
 	criterion 2: review
@@ -2228,11 +2238,21 @@ story editor.tools
 		then: The editor has undo and redo, and can zoom, unlike the game.
 	criterion 4: review
 		then: Terrain types can be added, renamed and removed, and their
-			passability and speed set.
+			passability, speed and sight set.
 	criterion 5: unit proposed
 		then: Undo puts the map back exactly as it was before the last
 			change, and redo exactly as after it; a change that changed
 			nothing is not kept.
+	criterion 6: unit
+		then: The editor shows settlements and decorations with the game's
+			sprites (client.render#7).
+		why: The user's request of 2026-10-11.
+	criterion 7: unit
+		then: A new map comes with the standard terrain types, grass,
+			short grass, tall grass, forest, road and water, with their
+			speed and sight, ready to paint; their values can be changed.
+		why: The user's request of 2026-10-11: painting forest or grass
+			makes the ground slow and hidden on its own.
 
 story editor.validation
 	title: Map checks

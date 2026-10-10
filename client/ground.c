@@ -10,8 +10,9 @@
 /// brightness, like paint. The shader finds the
 /// point of the map under each pixel by turning the camera's projection
 /// back (client/camera.h), and how far inside sight it lies from the
-/// player's troops, handed to it each frame, as client/game.c measures it:
-/// fully inside sight to 1 tile before the radius, fading to none at it.
+/// player's troops and how far each sees, handed to it each frame, as
+/// client/game.c measures it: fully inside sight to 1 tile before a
+/// troop's radius, fading to none at it.
 
 #include "client/ground.h"
 
@@ -36,9 +37,8 @@ static const char* const _vasal_client_ground_shader =
 	"uniform vec2 render;\n"
 	"uniform vec3 camera;\n"
 	"uniform float tilt;\n"
-	"uniform float sight;\n"
 	"uniform int eye_count;\n"
-	"uniform vec2 eyes[120];\n"
+	"uniform vec3 eyes[120];\n"
 	"uniform vec3 beyond;\n"
 	"float hash(vec2 p) {\n"
 	"	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);\n"
@@ -103,15 +103,14 @@ static const char* const _vasal_client_ground_shader =
 	"	}\n"
 	"	color /= total;\n"
 	"	color *= 0.93 + 0.14 * noise(at * 0.09);\n"
-	"	float nearest = 1.0e9;\n"
+	"	float seen = 0.0;\n"
 	"	for (int i = 0; i < 120; i++) {\n"
 	"		if (i >= eye_count) {\n"
 	"			break;\n"
 	"		}\n"
-	"		vec2 d = at - eyes[i];\n"
-	"		nearest = min(nearest, dot(d, d));\n"
+	"		seen = max(seen, eyes[i].z - distance(at, eyes[i].xy));\n"
 	"	}\n"
-	"	float seen = clamp(sight - sqrt(nearest), 0.0, 1.0);\n"
+	"	seen = clamp(seen, 0.0, 1.0);\n"
 	"	float gray = dot(color, vec3(0.30, 0.59, 0.11)) * 0.6;\n"
 	"	gl_FragColor = vec4(mix(vec3(gray), color, seen), 1.0);\n"
 	"}\n";
@@ -128,7 +127,6 @@ typedef struct _vasal_client_ground_s {
 	int                       render;
 	int                       camera;
 	int                       tilt;
-	int                       sight;
 	int                       eye_count;
 	int                       eyes;
 	int                       beyond;
@@ -153,7 +151,6 @@ static void _vasal_client_ground_compile(
 	ground->render = GetShaderLocation(shader, "render");
 	ground->camera = GetShaderLocation(shader, "camera");
 	ground->tilt = GetShaderLocation(shader, "tilt");
-	ground->sight = GetShaderLocation(shader, "sight");
 	ground->eye_count = GetShaderLocation(shader, "eye_count");
 	ground->eyes = GetShaderLocation(shader, "eyes");
 	ground->beyond = GetShaderLocation(shader, "beyond");
@@ -184,14 +181,14 @@ static void _vasal_client_ground_paint(_vasal_client_ground_s* const ground,
 // spec: map.sight#1 map.sight#3
 static void _vasal_client_ground_eyes(const _vasal_client_ground_s* const
 		ground, const vasal_client_game_s* const game) {
-	static float eyes[_vasal_client_ground_eyes_max * 2U];
+	static float eyes[_vasal_client_ground_eyes_max * 3U];
 	int count = 0;
 	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
 		const vasal_engine_world_group_s* const group =
 			vasal_client_game_group(game, g);
 		for (size_t t = 0U; t < group->troop_count; t++) {
-			vasal_client_game_troop_at(game, g, t, &eyes[count * 2],
-				&eyes[(count * 2) + 1]);
+			eyes[(count * 3) + 2] = vasal_client_game_eye(game, g, t,
+				&eyes[count * 3], &eyes[(count * 3) + 1]);
 			count++;
 		}
 	}
@@ -199,7 +196,7 @@ static void _vasal_client_ground_eyes(const _vasal_client_ground_s* const
 		SHADER_UNIFORM_INT);
 	if (0 < count) {
 		SetShaderValueV(ground->shader, ground->eyes, eyes,
-			SHADER_UNIFORM_VEC2, count);
+			SHADER_UNIFORM_VEC3, count);
 	}
 }
 
@@ -226,7 +223,6 @@ bool_t vasal_client_ground_draw(const vasal_client_game_s* const game,
 	};
 	const float view[3] = { camera->x, camera->y, camera->scale };
 	const float tilt = vasal_client_camera_tilt;
-	const float sight = vasal_client_game_sight;
 	const Color beyond = GetColor(_vasal_client_ground_beyond);
 	const float beyond_color[3] = {
 		(float)beyond.r / 255.0f, (float)beyond.g / 255.0f,
@@ -237,7 +233,6 @@ bool_t vasal_client_ground_draw(const vasal_client_game_s* const game,
 	SetShaderValue(shader, ground->render, render, SHADER_UNIFORM_VEC2);
 	SetShaderValue(shader, ground->camera, view, SHADER_UNIFORM_VEC3);
 	SetShaderValue(shader, ground->tilt, &tilt, SHADER_UNIFORM_FLOAT);
-	SetShaderValue(shader, ground->sight, &sight, SHADER_UNIFORM_FLOAT);
 	SetShaderValue(shader, ground->beyond, beyond_color,
 		SHADER_UNIFORM_VEC3);
 	_vasal_client_ground_eyes(ground, game);

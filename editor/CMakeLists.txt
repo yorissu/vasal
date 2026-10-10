@@ -18,3 +18,8 @@ list(JOIN vasal_editor_exports "," vasal_editor_exports)
 target_link_options(editor PRIVATE
 	-sEXPORTED_FUNCTIONS=${vasal_editor_exports}
 	-sEXPORTED_RUNTIME_METHODS=ccall,HEAPU8)
+# The game's art, inside the editor like everything else.
+set(vasal_editor_art ${PROJECT_SOURCE_DIR}/art/structures.png)
+target_link_options(editor PRIVATE
+	"SHELL:--embed-file ${vasal_editor_art}@/art/structures.png")
+set_property(TARGET editor APPEND PROPERTY LINK_DEPENDS ${vasal_editor_art})

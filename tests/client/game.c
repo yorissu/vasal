@@ -389,3 +389,25 @@ cairo_test_new(client_game, z_without_a_selection_gets_a_notice) {
 	vasal_client_game_toggle_pace(game);
 	cairo_assert_gt(game->notice_seconds, 0.0f);
 }
+
+// spec: map.terrain#9 map.sight#1
+cairo_test_new(client_game, troops_in_forest_see_less_far) {
+	vasal_client_game_s* const game = _vasal_tests_client_game_start();
+	vasal_engine_map_s* const map = &_vasal_tests_client_game_map;
+	vasal_engine_map_standard_terrains(map);
+	float x = 0.0f;
+	float y = 0.0f;
+	const float open = vasal_client_game_eye(game, 0U, 0U, &x, &y);
+	cairo_assert_nr(open, vasal_client_game_sight, 0.001f);
+	// Forest under the whole centaine.
+	for (size_t i = 0U; i < (200U * 200U); i++) {
+		map->tiles[i] = (uint8_t)vasal_engine_map_standard_forest;
+	}
+	const float hidden = vasal_client_game_eye(game, 0U, 0U, &x, &y);
+	cairo_assert_nr(hidden, vasal_client_game_sight
+		* (float)map->terrains[vasal_engine_map_standard_forest].sight
+		/ 100.0f, 0.001f);
+	// A point the troops saw in the open is out of their sight now.
+	cairo_assert_eq(vasal_client_game_sight_at(game, x + (0.8f * open), y),
+		0.0f);
+}

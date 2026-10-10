@@ -29,6 +29,10 @@
 /// The fastest a terrain type may be, in percent of a troop's speed.
 #define vasal_engine_map_speed_max 200U
 
+/// The farthest troops on a terrain type may see, in percent of their
+/// sight.
+#define vasal_engine_map_sight_max 200U
+
 /// Settlement types.
 typedef enum vasal_engine_map_settlement_type_e {
 	vasal_engine_map_settlement_village,
@@ -63,6 +67,9 @@ typedef struct vasal_engine_map_terrain_s {
 	/// How fast troops cross it, in percent of their speed; 0 when it is
 	/// impassable.
 	uint16_t speed;
+	/// How far troops standing on it see, in percent of their sight:
+	/// forest and tall grass hide what is around.
+	uint16_t sight;
 	bool_t   passable;
 } vasal_engine_map_terrain_s;
 
@@ -148,6 +155,25 @@ typedef struct vasal_engine_map_finding_s {
 	vasal_engine_map_problem_e problem;
 	uint16_t                   index;
 } vasal_engine_map_finding_s;
+
+/// The standard terrain types, in the order
+/// vasal_engine_map_standard_terrains gives them.
+typedef enum vasal_engine_map_standard_e {
+	vasal_engine_map_standard_grass,
+	vasal_engine_map_standard_short_grass,
+	vasal_engine_map_standard_tall_grass,
+	vasal_engine_map_standard_forest,
+	vasal_engine_map_standard_road,
+	vasal_engine_map_standard_water,
+	vasal_engine_map_standards
+} vasal_engine_map_standard_e;
+
+/// Gives the map the standard terrain types in place of its own: grass,
+/// short grass, tall grass, forest, road and water, with their colors,
+/// speeds and sights (placeholders until tuning). Tiles keep their numbers,
+/// so a cleared map stays grass. New maps of the editor and the
+/// demonstration map start with them; a map may change them all.
+void vasal_engine_map_standard_terrains(vasal_engine_map_s* const map);
 
 /// Makes the map empty, width by height tiles of one passable terrain type
 /// named "grass". Returns false, leaving the map unchanged, when a side is

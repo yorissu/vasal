@@ -78,9 +78,14 @@ void vasal_client_game_anchor_at(const vasal_client_game_s* const game,
 bool_t vasal_client_game_select(vasal_client_game_s* const game,
 	const size_t group, const bool_t adding);
 
+/// Where a troop of the player's is drawn now, in tiles, and how far it
+/// sees: the ordinary sight times the sight of the terrain it stands on.
+float vasal_client_game_eye(const vasal_client_game_s* const game,
+	const size_t group, const size_t troop, float* const x, float* const y);
+
 /// How far a point, in tiles, is inside the player's sight: 1 well inside
 /// a troop's sight, 0 outside every troop's, fading over the last tile of
-/// the radius.
+/// each troop's radius.
 float vasal_client_game_sight_at(const vasal_client_game_s* const game,
 	const float x, const float y);
 

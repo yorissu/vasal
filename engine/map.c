@@ -4,11 +4,39 @@
 
 #include "engine/map.h"
 
+// The standard terrain types, in the order of
+// vasal_engine_map_standard_e. Forest and tall grass are slow and hide what
+// is around; roads are a little faster than grass.
+static const vasal_engine_map_terrain_s
+	_vasal_engine_map_standards[vasal_engine_map_standards] = {
+	{ .name = "grass", .color = 0x6a9a3cffU, .speed = 100U, .sight = 100U,
+		.passable = true },
+	{ .name = "short grass", .color = 0x82a845ffU, .speed = 85U,
+		.sight = 100U, .passable = true },
+	{ .name = "tall grass", .color = 0xa8b04affU, .speed = 50U,
+		.sight = 60U, .passable = true },
+	{ .name = "forest", .color = 0x2f5a2affU, .speed = 35U, .sight = 40U,
+		.passable = true },
+	{ .name = "road", .color = 0xb59a6bffU, .speed = 120U, .sight = 100U,
+		.passable = true },
+	{ .name = "water", .color = 0x3d6fb0ffU, .speed = 0U, .sight = 100U,
+		.passable = false }
+};
+
+// spec: map.terrain#9 editor.tools#7
+void vasal_engine_map_standard_terrains(vasal_engine_map_s* const map) {
+	for (size_t i = 0U; i < (size_t)vasal_engine_map_standards; i++) {
+		map->terrains[i] = _vasal_engine_map_standards[i];
+	}
+	map->terrain_count = (uint8_t)vasal_engine_map_standards;
+}
+
 // The default terrain of a new map.
 static const vasal_engine_map_terrain_s _vasal_engine_map_grass = {
 	.name     = "grass",
 	.color    = 0x6a9a3cffU,
 	.speed    = 100U,
+	.sight    = 100U,
 	.passable = true
 };
 
