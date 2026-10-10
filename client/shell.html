@@ -18,7 +18,24 @@
 	<body>
 		<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
 		<script>
-			var Module = { canvas: document.getElementById("canvas") };
+			var Module = {
+				canvas: document.getElementById("canvas"),
+				shift: false
+			};
+			// Whether shift is held, from the browser's own events, each of
+			// which says. raylib only learns that a key is up from its
+			// keyup, which never comes when the browser takes it, as its
+			// context menu does (Firefox opens it on shift and right-click
+			// even when the page prevents it): shift would stay held.
+			["keydown", "keyup", "mousedown", "mouseup", "mousemove",
+				"wheel"].forEach(function (type) {
+				window.addEventListener(type, function (event) {
+					Module.shift = event.shiftKey;
+				}, true);
+			});
+			window.addEventListener("blur", function () {
+				Module.shift = false;
+			});
 		</script>
 		{{{ SCRIPT }}}
 	</body>

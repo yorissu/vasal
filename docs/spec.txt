@@ -2137,6 +2137,12 @@ story client.input
 			mouse never selects, and Q, W, E and R set the
 			aggressive, guard, defensive and flee modes. There are no keys
 			to move the camera.
+	criterion 2: review proposed
+		when: The player releases shift while the browser shows a menu of
+			its own or while the game's tab is in the background.
+		then: Shift is no longer held: the next group key selects that
+			group alone and the next order replaces the current ones.
+		why: The browser doesn't always pass on the release of a key.
 
 story client.replay
 	title: Timelapse viewer
