@@ -446,42 +446,37 @@ story map.camera
 		why: A larger screen must not reveal more units or frame the sight
 			differently.
 	criterion 2: unit
-		given: A vintaine that gets a scout, whose sight reaches farther
-			than the rest.
-		then: The camera zooms out until the scout's sight is in the
-			window, with the margin.
-	criterion 3: unit
 		given: Several selected vintaines, near each other or not.
 		then: The camera frames the focused vintaine's sight alone: it
 			neither zooms out nor centers between them.
-	criterion 4: unit
+	criterion 3: unit
 		when: The player adds a vintaine to the selection.
 		then: The camera moves to it, since the last selected vintaine is
 			focused (vintaines.focus).
-	criterion 5: unit
+	criterion 4: unit
 		then: The camera never frames more than {map.camera.max_frame}
 			tiles across, however far the sight reaches.
-	criterion 6: unit
+	criterion 5: unit
 		then: The camera stays centered on the focused vintaine as it
 			moves, even at the map's edges, where the window shows a plain
 			dark ground beyond them (the map is a diamond on the screen, so
 			its corners can't fill the window). The player can't move or
 			zoom the camera.
-	criterion 7: unit
+	criterion 6: unit
 		when: The focus changes to another vintaine.
 		then: The camera glides to it over {map.camera.glide} ticks
 			instead of jumping.
-	criterion 8: review
+	criterion 7: review
 		then: The zoom changes smoothly, without jumps, as troops move and
 			the selection changes.
-	criterion 9: unit
+	criterion 8: unit
 		when: The browser window is resized.
 		then: The scale of what is drawn stays the same; the window shows
 			more or less of the picture around its middle.
-	criterion 10: unit
+	criterion 9: unit
 		when: The browser window moves to a monitor of another size.
 		then: The picture is scaled for the new monitor.
-	criterion 11: review
+	criterion 10: review
 		then: The game is drawn sharp on high-density screens, and the
 			interface (minimap, gold, alerts) stays at the window's edges
 			and corners rather than being cropped with the map.
@@ -526,24 +521,17 @@ story map.sight
 		minimap. Outside it the terrain is still drawn, grayed, and no
 		troops or NPCs are shown. The edge fades softly from color to gray.
 		Settlements are always shown, since the map is known.
-	criterion 1: scenario
-		given: An enemy vintaine just inside the sight of one of the
-			player's troops, and one just outside it.
-		then: The first appears in the player's view and on the minimap,
-			the second in neither.
-	criterion 2: unit
+	criterion 1: unit
 		given: Two of the player's vintaines far apart.
 		then: Each shows its own sight, and units in either are shown.
-	criterion 3: unit
-		then: Each troop's sight radius is its type's.
-	criterion 4: unit
+	criterion 2: unit
 		then: Outside the player's sight the terrain is drawn grayed and no
 			troops or NPCs are drawn.
-	criterion 5: review
+	criterion 3: review
 		then: The edge of sight fades softly from color to gray.
-	criterion 6: review proposed
+	criterion 4: review proposed
 		then: Settlements are shown everywhere, inside sight or not.
-	criterion 7: scenario open
+	criterion 5: scenario open
 		then: Whether allies share what their troops see.
 
 story map.contents
@@ -579,6 +567,8 @@ story troops.types
 	criterion 1: unit proposed
 		then: The first build offers exactly the spearman, swordsman,
 			archer, thrower and scout.
+	criterion 2: unit
+		then: Each troop's sight radius is its type's (map.sight).
 
 story troops.skill
 	title: Skill
@@ -611,6 +601,11 @@ story troops.scout
 		then: The scout loses most of them.
 	criterion 4: unit proposed
 		then: A scout fights in melee, with a light weapon and no shield.
+	criterion 5: unit
+		given: A vintaine that gets a scout, whose sight reaches farther
+			than the rest.
+		then: The camera zooms out until the scout's sight is in the
+			window, with the margin.
 
 story troops.tiers
 	title: Experience tiers
@@ -2241,11 +2236,6 @@ story simulation.tick
 	value rate: 20 count fixed
 	criterion 1: unit
 		then: The simulation runs {simulation.tick.rate} ticks a second.
-	criterion 2: unit
-		then: A tick runs its steps in this order: apply orders, choose
-			targets by mode, move, pair duels, resolve combat, remove the
-			dead, update captures, pay out, spawn NPCs and treasure, check
-			for the end of the match.
 
 story simulation.determinism
 	title: Same input, same result
@@ -2262,6 +2252,34 @@ story simulation.determinism
 		given: A scenario run by the native Linux build and by the
 			WebAssembly build.
 		then: Both produce identical event logs.
+
+story map.visibility
+	title: Others in sight
+	milestone: 2
+	links: map.sight security.visibility network.interest
+	description: Other armies, enemy or allied, and NPCs are shown only
+		inside the player's sight (map.sight), both in the main view and
+		on the minimap. This comes with the first other armies.
+	criterion 1: scenario
+		given: An enemy vintaine just inside the sight of one of the
+			player's troops, and one just outside it.
+		then: The first appears in the player's view and on the minimap,
+			the second in neither.
+
+story simulation.steps
+	title: The order of a tick's steps
+	milestone: 6
+	links: simulation.tick combat.tick capture.progress economy.payout
+		npcs.rules match.win
+	description: A tick runs its steps in a fixed order. Steps arrive with
+		their milestones (combat in 2, captures in 4, the end of the match
+		in 5, NPCs in 6); each keeps its place in this order, which is
+		complete from milestone 6.
+	criterion 1: unit
+		then: A tick runs its steps in this order: apply orders, choose
+			targets by mode, move, pair duels, resolve combat, remove the
+			dead, update captures, pay out, spawn NPCs and treasure, check
+			for the end of the match.
 
 story simulation.random
 	title: Seeded random streams

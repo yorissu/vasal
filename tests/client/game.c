@@ -228,7 +228,7 @@ cairo_test_new(client_game, order_off_the_map_gets_notice) {
 	cairo_assert_gt(game->notice_seconds, 0.0f);
 }
 
-// spec: map.sight#4
+// spec: map.sight#2
 cairo_test_new(client_game, sight_inside_and_outside) {
 	vasal_client_game_s* const game = _vasal_tests_client_game_start();
 	cairo_assert_nreq(vasal_client_game_sight_at(game, 100.0f, 100.0f),
@@ -238,7 +238,7 @@ cairo_test_new(client_game, sight_inside_and_outside) {
 	cairo_assert_nreq(vasal_client_game_sight_at(game, 10.0f, 10.0f), 0.0f);
 }
 
-// spec: map.sight#4
+// spec: map.sight#2
 cairo_test_new(client_game, sight_fades_over_the_last_tile) {
 	vasal_client_game_s* const game = _vasal_tests_client_game_start();
 	float x = 0.0f;
@@ -249,7 +249,7 @@ cairo_test_new(client_game, sight_fades_over_the_last_tile) {
 	cairo_assert_nreq(edge, 0.5f);
 }
 
-// spec: map.sight#2
+// spec: map.sight#1
 cairo_test_new(client_game, sight_is_the_union_of_troops) {
 	vasal_client_game_s* const game = _vasal_tests_client_game_start();
 	vasal_engine_world_group_s* const far =

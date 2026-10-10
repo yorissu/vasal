@@ -6,8 +6,8 @@
 
 #include <math.h>
 
-// spec: map.camera#1 map.camera#3 map.camera#5 map.camera#6 map.camera#9
-// spec: map.camera#4 map.camera#7 map.camera#10
+// spec: map.camera#1 map.camera#2 map.camera#4 map.camera#5 map.camera#8
+// spec: map.camera#3 map.camera#6 map.camera#9
 void vasal_client_camera_update(vasal_client_camera_s* const camera,
 	const vasal_client_game_s* const game, const float seconds,
 	const float width, const float height, const float monitor_width,

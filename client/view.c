@@ -74,7 +74,7 @@ static void _vasal_client_view_bounds(const vasal_engine_map_s* const map,
 
 // Every tile is a diamond: its corner (x, y) at the top, (x + 1, y) to the
 // right, (x + 1, y + 1) at the bottom and (x, y + 1) to the left.
-// spec: map.sight#2 map.sight#4 map.sight#5
+// spec: map.sight#1 map.sight#2 map.sight#3
 static void _vasal_client_view_terrain(const vasal_client_game_s* const game,
 		const vasal_client_camera_s* const camera, const float width,
 		const float height) {

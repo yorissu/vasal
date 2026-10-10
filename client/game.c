@@ -163,7 +163,7 @@ bool_t vasal_client_game_select(vasal_client_game_s* const game,
 	return true;
 }
 
-// spec: map.sight#1 map.sight#2 map.sight#4
+// spec: map.sight#1 map.sight#2
 float vasal_client_game_sight_at(const vasal_client_game_s* const game,
 	const float x, const float y) {
 	float nearest = 1.0e9f;

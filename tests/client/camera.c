@@ -73,7 +73,7 @@ cairo_test_new(client_camera, sight_fits_the_monitor_with_margin) {
 		0.01f);
 }
 
-// spec: map.camera#3
+// spec: map.camera#2
 cairo_test_new(client_camera, frames_the_focused_alone) {
 	vasal_client_game_s* const game = _vasal_tests_client_camera_start();
 	_vasal_tests_client_camera_place(game, 0U, 100.0f, 100.0f);
@@ -89,7 +89,7 @@ cairo_test_new(client_camera, frames_the_focused_alone) {
 	cairo_assert_nr(camera.y, 100.0f, 0.01f);
 }
 
-// spec: map.camera#4
+// spec: map.camera#3
 cairo_test_new(client_camera, moves_to_the_last_selected) {
 	vasal_client_game_s* const game = _vasal_tests_client_camera_start();
 	_vasal_tests_client_camera_place(game, 0U, 100.0f, 100.0f);
@@ -107,7 +107,7 @@ cairo_test_new(client_camera, moves_to_the_last_selected) {
 	cairo_assert_nr(camera.scale, scale, 0.0001f);
 }
 
-// spec: map.camera#5
+// spec: map.camera#4
 cairo_test_new(client_camera, never_frames_more_than_max) {
 	vasal_client_game_s* const game = _vasal_tests_client_camera_start();
 	vasal_client_game_select_all(game, 0U);
@@ -117,7 +117,7 @@ cairo_test_new(client_camera, never_frames_more_than_max) {
 		900.0f), vasal_client_camera_max_frame + 0.01f);
 }
 
-// spec: map.camera#6
+// spec: map.camera#5
 cairo_test_new(client_camera, follows_focus_to_the_edges) {
 	vasal_client_game_s* const game = _vasal_tests_client_camera_start();
 	_vasal_tests_client_camera_place(game, 0U, 100.0f, 100.0f);
@@ -165,7 +165,7 @@ cairo_test_new(client_camera, isometric_projection) {
 	cairo_assert_nr(y, 31.5f, 0.001f);
 }
 
-// spec: map.camera#7
+// spec: map.camera#6
 cairo_test_new(client_camera, glides_to_new_focus) {
 	vasal_client_game_s* const game = _vasal_tests_client_camera_start();
 	_vasal_tests_client_camera_place(game, 0U, 100.0f, 100.0f);
@@ -184,7 +184,7 @@ cairo_test_new(client_camera, glides_to_new_focus) {
 	cairo_assert_nr(camera.x, 120.0f, 0.01f);
 }
 
-// spec: map.camera#9
+// spec: map.camera#8
 cairo_test_new(client_camera, resizing_the_window_keeps_scale) {
 	vasal_client_game_s* const game = _vasal_tests_client_camera_start();
 	const vasal_client_camera_s small = _vasal_tests_client_camera_first(
@@ -196,7 +196,7 @@ cairo_test_new(client_camera, resizing_the_window_keeps_scale) {
 	cairo_assert_nr(small.y, large.y, 0.0001f);
 }
 
-// spec: map.camera#10
+// spec: map.camera#9
 cairo_test_new(client_camera, another_monitor_rescales) {
 	vasal_client_game_s* const game = _vasal_tests_client_camera_start();
 	const vasal_client_camera_s first = _vasal_tests_client_camera_first(
