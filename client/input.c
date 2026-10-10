@@ -2,6 +2,7 @@
 /// Turns keys and the right button into selection, focus and orders.
 
 #include "client/input.h"
+#include "client/minimap.h"
 
 #include <emscripten/emscripten.h>
 #include <raylib.h>
@@ -33,6 +34,9 @@ static void _vasal_client_input_keys(vasal_client_input_s* const input,
 	if (IsKeyPressed(KEY_TAB)) {
 		vasal_client_game_cycle_focus(game);
 	}
+	if (IsKeyPressed(KEY_Z)) {
+		vasal_client_game_toggle_pace(game);
+	}
 }
 
 // spec: client.input#1
@@ -44,8 +48,12 @@ void vasal_client_input_update(vasal_client_input_s* const input,
 	_vasal_client_input_keys(input, game, seconds, shift);
 	const Vector2 mouse = GetMousePosition();
 	vasal_client_game_action_e chosen = game->action;
+	// A press on the minimap opens no wheel and so gives no order.
+	// spec: map.minimap#1
+	const bool_t pressed = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)
+		&& !vasal_client_minimap_contains(width, height, mouse.x, mouse.y);
 	const vasal_client_wheel_event_e event = vasal_client_wheel_update(
-		&input->wheel, IsMouseButtonPressed(MOUSE_BUTTON_RIGHT),
+		&input->wheel, pressed,
 		IsMouseButtonReleased(MOUSE_BUTTON_RIGHT), mouse.x, mouse.y, seconds,
 		&chosen);
 	if ((vasal_client_wheel_event_quick != event)

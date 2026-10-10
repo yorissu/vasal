@@ -31,7 +31,7 @@ static void _vasal_tests_client_camera_place(vasal_client_game_s* const game,
 		(int32_t)(x * precision), (int32_t)(y * precision)
 	};
 	game->world->vasals[game->vasal].groups[group].anchor = at;
-	game->previous_anchors[group] = at;
+	game->previous_anchors[game->vasal][group] = at;
 }
 
 // The camera after its first update, which jumps.

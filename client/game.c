@@ -17,14 +17,17 @@ static const uint16_t _vasal_client_game_speeds[3] = { 20U, 22U, 26U };
 
 static vasal_engine_world_s _vasal_client_game_world;
 
-// Remembers the player's positions before a tick moves them.
+// Remembers every vasal's positions before a tick moves them.
 static void _vasal_client_game_remember(vasal_client_game_s* const game) {
-	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
-		const vasal_engine_world_group_s* const group =
-			vasal_client_game_group(game, g);
-		game->previous_anchors[g] = group->anchor;
-		for (size_t t = 0U; t < group->troop_count; t++) {
-			game->previous_troops[g][t] = group->troops[t].position;
+	const vasal_engine_world_s* const world = game->world;
+	for (size_t v = 0U; v < world->vasal_count; v++) {
+		for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
+			const vasal_engine_world_group_s* const group =
+				&world->vasals[v].groups[g];
+			game->previous_anchors[v][g] = group->anchor;
+			for (size_t t = 0U; t < group->troop_count; t++) {
+				game->previous_troops[v][g][t] = group->troops[t].position;
+			}
 		}
 	}
 }
@@ -43,15 +46,24 @@ static void _vasal_client_game_between(const vasal_client_game_s* const game,
 		/ precision;
 }
 
+void vasal_client_game_position_at(const vasal_client_game_s* const game,
+	const size_t vasal, const size_t group, const size_t troop,
+	float* const x, float* const y) {
+	_vasal_client_game_between(game,
+		game->previous_troops[vasal][group][troop],
+		game->world->vasals[vasal].groups[group].troops[troop].position, x,
+		y);
+}
+
 void vasal_client_game_troop_at(const vasal_client_game_s* const game,
 	const size_t group, const size_t troop, float* const x, float* const y) {
-	_vasal_client_game_between(game, game->previous_troops[group][troop],
-		vasal_client_game_group(game, group)->troops[troop].position, x, y);
+	vasal_client_game_position_at(game, game->vasal, group, troop, x, y);
 }
 
 void vasal_client_game_anchor_at(const vasal_client_game_s* const game,
 	const size_t group, float* const x, float* const y) {
-	_vasal_client_game_between(game, game->previous_anchors[group],
+	_vasal_client_game_between(game,
+		game->previous_anchors[game->vasal][group],
 		vasal_client_game_group(game, group)->anchor, x, y);
 }
 
@@ -206,6 +218,25 @@ void vasal_client_game_cycle_focus(vasal_client_game_s* const game) {
 			return;
 		}
 	}
+}
+
+// spec: vintaines.pace#4 vintaines.queue#8
+void vasal_client_game_toggle_pace(vasal_client_game_s* const game) {
+	if (0U == game->selection) {
+		vasal_client_game_notify(game, "Select a vintaine first.");
+		return;
+	}
+	bool_t in_step = true;
+	for (size_t group = 0U; group < vasal_engine_world_groups; group++) {
+		if (_vasal_client_game_selected(game, group)
+				&& (vasal_engine_world_pace_in_step
+					!= vasal_client_game_group(game, group)->pace)) {
+			in_step = false;
+		}
+	}
+	vasal_engine_world_set_pace(game->world, game->vasal, game->selection,
+		in_step ? vasal_engine_world_pace_at_the_run
+			: vasal_engine_world_pace_in_step);
 }
 
 void vasal_client_game_notify(vasal_client_game_s* const game,

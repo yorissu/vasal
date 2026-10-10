@@ -36,12 +36,13 @@ typedef struct vasal_client_game_s {
 	float                      notice_seconds;
 	/// Time not yet simulated, in seconds.
 	float                      pending;
-	/// The player's troops and anchors at the tick before the last, so
+	/// Every vasal's troops and anchors at the tick before the last, so
 	/// frames between ticks are drawn between the two.
-	vasal_engine_world_position_s
-		previous_troops[vasal_engine_world_groups][vasal_engine_world_troops];
-	vasal_engine_world_position_s
-		previous_anchors[vasal_engine_world_groups];
+	vasal_engine_world_position_s previous_troops
+		[vasal_engine_world_vasals_max][vasal_engine_world_groups]
+		[vasal_engine_world_troops];
+	vasal_engine_world_position_s previous_anchors
+		[vasal_engine_world_vasals_max][vasal_engine_world_groups];
 } vasal_client_game_s;
 
 /// Starts a game on the map with the player's centaine at the map's first
@@ -62,6 +63,11 @@ const vasal_engine_world_group_s* vasal_client_game_group(
 /// last one. The world moves 20 times a second, the screen 60 or more.
 void vasal_client_game_troop_at(const vasal_client_game_s* const game,
 	const size_t group, const size_t troop, float* const x, float* const y);
+
+/// Where a troop of any vasal is drawn now, in tiles, likewise.
+void vasal_client_game_position_at(const vasal_client_game_s* const game,
+	const size_t vasal, const size_t group, const size_t troop,
+	float* const x, float* const y);
 
 /// Where a group's anchor is drawn now, in tiles, likewise.
 void vasal_client_game_anchor_at(const vasal_client_game_s* const game,
@@ -85,6 +91,11 @@ void vasal_client_game_select_all(vasal_client_game_s* const game,
 
 /// Moves the focus to the next selected group, in the order of the keys.
 void vasal_client_game_cycle_focus(vasal_client_game_s* const game);
+
+/// Switches the marching pace of the selected groups: at the run when
+/// every one of them marches in step, else in step. Their orders and queues
+/// stay as they are.
+void vasal_client_game_toggle_pace(vasal_client_game_s* const game);
 
 /// Gives the selected groups an order of the action toward a tile, which
 /// may be off the map (the order is then refused with a notice). A queued

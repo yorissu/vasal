@@ -257,7 +257,7 @@ cairo_test_new(client_game, sight_is_the_union_of_troops) {
 	const int32_t precision = (int32_t)vasal_engine_map_precision;
 	for (size_t t = 0U; t < far->troop_count; t++) {
 		far->troops[t].position.x = 160 * precision;
-		game->previous_troops[1][t] = far->troops[t].position;
+		game->previous_troops[game->vasal][1][t] = far->troops[t].position;
 	}
 	cairo_assert_nreq(vasal_client_game_sight_at(game, 100.0f, 100.0f),
 		1.0f);
@@ -352,4 +352,40 @@ cairo_test_new(client_game, shift_held_selects_and_queues) {
 	cairo_assert_eq(first->queue_count, 4U);
 	cairo_assert_true(second->moving);
 	cairo_assert_eq(second->queue_count, 2U);
+}
+
+// spec: vintaines.pace#4 vintaines.queue#8
+cairo_test_new(client_game, z_switches_the_pace_of_the_selection) {
+	vasal_client_game_s* const game = _vasal_tests_client_game_start();
+	const vasal_engine_world_group_s* const first =
+		vasal_client_game_group(game, 0U);
+	const vasal_engine_world_group_s* const second =
+		vasal_client_game_group(game, 1U);
+	(void)vasal_client_game_select(game, 0U, false);
+	vasal_client_game_order(game, 150, 100, vasal_client_game_action_move,
+		false);
+	vasal_client_game_order(game, 150, 150, vasal_client_game_action_move,
+		true);
+	vasal_client_game_toggle_pace(game);
+	cairo_assert_eq(first->pace, vasal_engine_world_pace_at_the_run);
+	cairo_assert_eq(second->pace, vasal_engine_world_pace_in_step);
+	// The order and its queue stay.
+	cairo_assert_true(first->moving);
+	cairo_assert_eq(first->queue_count, 1U);
+	// One at the run and one in step: both march in step.
+	(void)vasal_client_game_select(game, 1U, true);
+	vasal_client_game_toggle_pace(game);
+	cairo_assert_eq(first->pace, vasal_engine_world_pace_in_step);
+	cairo_assert_eq(second->pace, vasal_engine_world_pace_in_step);
+	vasal_client_game_toggle_pace(game);
+	cairo_assert_eq(first->pace, vasal_engine_world_pace_at_the_run);
+	cairo_assert_eq(second->pace, vasal_engine_world_pace_at_the_run);
+}
+
+// spec: vintaines.pace#4
+cairo_test_new(client_game, z_without_a_selection_gets_a_notice) {
+	vasal_client_game_s* const game = _vasal_tests_client_game_start();
+	game->selection = 0U;
+	vasal_client_game_toggle_pace(game);
+	cairo_assert_gt(game->notice_seconds, 0.0f);
 }

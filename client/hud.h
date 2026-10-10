@@ -1,7 +1,8 @@
 
 /// The interface drawn over the map, kept at the window's edges so it is
-/// never cropped with the map: the groups along the bottom, the current
-/// action, notices, and the action wheel while it is open.
+/// never cropped with the map: the groups along the bottom, the minimap in
+/// the bottom right corner (client/minimap.h), the current action, notices,
+/// and the action wheel while it is open.
 
 #ifndef vasal__client__hud_h
 #define vasal__client__hud_h

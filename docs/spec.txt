@@ -1273,6 +1273,12 @@ story vintaines.pace
 			again once the last troop arrives.
 	criterion 3: unit proposed
 		then: A new vintaine marches in step.
+	criterion 4: unit proposed
+		when: The player presses Z.
+		then: The selected vintaines go at the run when every one of them
+			marches in step, and march in step otherwise; their orders and
+			queues stay as they are. The bottom bar shows each vintaine's
+			pace.
 
 
 # ======================================================================
@@ -2132,7 +2138,8 @@ story client.input
 	description: Mouse and keyboard controls.
 	criterion 1: review proposed
 		then: Keys 1 to 5 select vintaines and 6 the centenar, shift adds
-			or removes from the selection, Tab moves the focus, the right
+			or removes from the selection, Tab moves the focus, Z switches
+			the marching pace (vintaines.pace#4), the right
 			mouse button orders (held down, it opens the action wheel), the
 			mouse never selects, and Q, W, E and R set the
 			aggressive, guard, defensive and flee modes. There are no keys

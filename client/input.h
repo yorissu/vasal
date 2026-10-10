@@ -1,7 +1,8 @@
 
 /// Mouse and keyboard. Keys 1 to 5 select a vintaine and 6 the centenar;
 /// with shift they add or remove it from the selection. Tab moves the
-/// focus. Pressing a group's key twice quickly selects every group. The
+/// focus. Z switches the selected groups between in step and at the
+/// run. Pressing a group's key twice quickly selects every group. The
 /// mouse never selects groups (client/keys.h). The right button orders,
 /// through the action wheel (client/wheel.h).
 

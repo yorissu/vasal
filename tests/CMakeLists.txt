@@ -14,6 +14,8 @@ set(vasal_test_web_sources
 	${PROJECT_SOURCE_DIR}/client/depth.c
 	${PROJECT_SOURCE_DIR}/client/game.c
 	${PROJECT_SOURCE_DIR}/client/keys.c
+	${PROJECT_SOURCE_DIR}/client/minimap.c
+	${PROJECT_SOURCE_DIR}/client/stress.c
 	${PROJECT_SOURCE_DIR}/client/wheel.c
 	${PROJECT_SOURCE_DIR}/editor/document.c)
 add_executable(tests main.c ${vasal_test_sources} ${vasal_test_web_sources})

@@ -1,6 +1,7 @@
 
-/// Insertion sort: a centaine is small, and between frames the order
-/// barely changes, which is insertion sort's best case.
+/// Insertion sort: only the troops in the window are sorted, a few hundred
+/// at most, and the player's own come in an order that barely changes
+/// between frames, which is insertion sort's best case.
 
 #include "client/depth.h"
 

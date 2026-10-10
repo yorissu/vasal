@@ -16,10 +16,14 @@
 #define _vasal_client_view_centenar (Color){ 236, 190, 60, 255 }
 #define _vasal_client_view_ring (Color){ 255, 255, 255, 140 }
 #define _vasal_client_view_focus_ring (Color){ 255, 255, 255, 230 }
+// Other vasals' troops, until alliances have colors: dulled, no accent.
+#define _vasal_client_view_other (Color){ 112, 120, 150, 255 }
+#define _vasal_client_view_other_rim (Color){ 60, 64, 80, 255 }
 
-// The most troops whose sight is drawn.
-#define _vasal_client_view_eyes_max                                           \
-	(vasal_engine_world_groups * vasal_engine_world_troops)
+// The most troops drawn at once.
+#define _vasal_client_view_troops_max                                         \
+	(vasal_engine_world_vasals_max * vasal_engine_world_groups                \
+		* vasal_engine_world_troops)
 
 static Color _vasal_client_view_color(const uint32_t rgba) {
 	const Color color = {
@@ -165,20 +169,74 @@ static void _vasal_client_view_groups(const vasal_client_game_s* const game,
 		_vasal_client_view_route(camera, width, height, group, ax, ay,
 			0U != (game->selection & ((uint32_t)1U << g)));
 	}
-	// Troops lower on the screen are drawn later, in front.
-	static vasal_client_depth_troop_s troops[_vasal_client_view_eyes_max];
+}
+
+// Whether a point on the screen is close enough to the window to draw a
+// troop there.
+static bool_t _vasal_client_view_on_screen(const float sx, const float sy,
+		const float width, const float height, const float reach) {
+	return (sx > -reach) && (sy > -reach) && (sx < (width + reach))
+		&& (sy < (height + reach));
+}
+
+// Gathers the troops to draw: the player's in the window, then other
+// vasals' in the window and in the player's sight. Returns how many.
+// spec: map.sight#1 client.render#1
+static size_t _vasal_client_view_gather(const vasal_client_game_s* const game,
+		const vasal_client_camera_s* const camera, const float width,
+		const float height, vasal_client_depth_troop_s* const troops) {
+	const vasal_engine_world_s* const world = game->world;
+	const float reach = camera->scale;
 	size_t count = 0U;
-	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
-		const vasal_engine_world_group_s* const group =
-			vasal_client_game_group(game, g);
-		for (size_t t = 0U; t < group->troop_count; t++) {
-			troops[count].centenar = vasal_engine_world_centenar == g;
-			vasal_client_game_troop_at(game, g, t, &troops[count].x,
-				&troops[count].y);
-			count++;
+	const float precision = (float)vasal_engine_map_precision;
+	for (size_t v = 0U; v < world->vasal_count; v++) {
+		const bool_t own = v == game->vasal;
+		for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
+			const vasal_engine_world_group_s* const group =
+				&world->vasals[v].groups[g];
+			// A group whose anchor is well off the window has no troop in
+			// it: troops keep within a few tiles of their anchor.
+			float ax = 0.0f;
+			float ay = 0.0f;
+			vasal_client_camera_to_screen(camera, width, height,
+				(float)group->anchor.x / precision,
+				(float)group->anchor.y / precision, &ax, &ay);
+			const size_t troops_count = _vasal_client_view_on_screen(ax, ay,
+				width, height, 8.0f * reach) ? group->troop_count : 0U;
+			for (size_t t = 0U; t < troops_count; t++) {
+				float x = 0.0f;
+				float y = 0.0f;
+				vasal_client_game_position_at(game, v, g, t, &x, &y);
+				float sx = 0.0f;
+				float sy = 0.0f;
+				vasal_client_camera_to_screen(camera, width, height, x, y,
+					&sx, &sy);
+				const bool_t shown = _vasal_client_view_on_screen(sx, sy,
+					width, height, reach) && (own
+						|| (vasal_client_game_sight_at(game, x, y) > 0.0f));
+				if (shown) {
+					troops[count].x = x;
+					troops[count].y = y;
+					troops[count].centenar = vasal_engine_world_centenar == g;
+					troops[count].own = own;
+					count++;
+				}
+			}
 		}
 	}
+	return count;
+}
+
+// Draws troops lower on the screen later, in front.
+// spec: client.render#2 client.render#4
+static size_t _vasal_client_view_troops(const vasal_client_game_s* const game,
+		const vasal_client_camera_s* const camera, const float width,
+		const float height) {
+	static vasal_client_depth_troop_s troops[_vasal_client_view_troops_max];
+	const size_t count = _vasal_client_view_gather(game, camera, width,
+		height, troops);
 	vasal_client_depth_sort(troops, count);
+	const float scale = camera->scale;
 	for (size_t i = 0U; i < count; i++) {
 		float sx = 0.0f;
 		float sy = 0.0f;
@@ -187,15 +245,23 @@ static void _vasal_client_view_groups(const vasal_client_game_s* const game,
 		const bool_t centenar = troops[i].centenar;
 		const float radius = (centenar ? 0.45f : 0.32f) * scale;
 		const Vector2 at = { sx, sy };
-		DrawCircleV(at, radius + fmaxf(1.0f, 0.06f * scale),
-			centenar ? _vasal_client_view_centenar : _vasal_client_view_accent);
-		DrawCircleV(at, radius, _vasal_client_view_alliance);
+		Color rim = _vasal_client_view_other_rim;
+		Color body = _vasal_client_view_other;
+		if (troops[i].own) {
+			rim = centenar ? _vasal_client_view_centenar
+				: _vasal_client_view_accent;
+			body = _vasal_client_view_alliance;
+		}
+		DrawCircleV(at, radius + fmaxf(1.0f, 0.06f * scale), rim);
+		DrawCircleV(at, radius, body);
 	}
+	return count;
 }
 
-void vasal_client_view_draw(const vasal_client_game_s* const game,
+size_t vasal_client_view_draw(const vasal_client_game_s* const game,
 	const vasal_client_camera_s* const camera, const float width,
 	const float height) {
 	_vasal_client_view_terrain(game, camera, width, height);
 	_vasal_client_view_groups(game, camera, width, height);
+	return _vasal_client_view_troops(game, camera, width, height);
 }
