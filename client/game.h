@@ -13,11 +13,10 @@
 /// tuning).
 #define vasal_client_game_sight 18.0f
 
-/// What a right-click orders.
+/// What a right-click orders. Only move for now; the attacks come with
+/// combat (vintaines.actions#6).
 typedef enum vasal_client_game_action_e {
 	vasal_client_game_action_move,
-	vasal_client_game_action_attack_to_point,
-	vasal_client_game_action_attack_beyond,
 	vasal_client_game_action_count
 } vasal_client_game_action_e;
 

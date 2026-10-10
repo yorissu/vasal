@@ -3,8 +3,9 @@
 /// with shift they add or remove it from the selection. Tab moves the
 /// focus. Z switches the selected groups between in step and at the
 /// run. Pressing a group's key twice quickly selects every group. The
-/// mouse never selects groups (client/keys.h). The right button orders,
-/// through the action wheel (client/wheel.h).
+/// mouse never selects groups (client/keys.h). The right button orders
+/// the current action; the left one opens the action wheel, which picks
+/// it (client/wheel.h).
 
 #ifndef vasal__client__input_h
 #define vasal__client__input_h

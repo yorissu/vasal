@@ -1,8 +1,9 @@
 
-/// Turns keys and the right button into selection, focus and orders.
+/// Turns keys and mouse buttons into selection, focus, the action wheel
+/// and orders.
 
 #include "client/input.h"
-#include "client/minimap.h"
+#include "client/layout.h"
 
 #include <emscripten/emscripten.h>
 #include <raylib.h>
@@ -47,24 +48,21 @@ void vasal_client_input_update(vasal_client_input_s* const input,
 	const bool_t shift = _vasal_client_input_shift();
 	_vasal_client_input_keys(input, game, seconds, shift);
 	const Vector2 mouse = GetMousePosition();
-	vasal_client_game_action_e chosen = game->action;
-	// A press on the minimap opens no wheel and so gives no order.
-	// spec: map.minimap#1
-	const bool_t pressed = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)
-		&& !vasal_client_minimap_contains(width, height, mouse.x, mouse.y);
-	const vasal_client_wheel_event_e event = vasal_client_wheel_update(
-		&input->wheel, pressed,
-		IsMouseButtonReleased(MOUSE_BUTTON_RIGHT), mouse.x, mouse.y, seconds,
-		&chosen);
-	if ((vasal_client_wheel_event_quick != event)
-			&& (vasal_client_wheel_event_chosen != event)) {
+	// The minimap and the groups' boxes take no clicks.
+	// spec: map.minimap#1 vintaines.actions#7
+	const bool_t on_interface = vasal_client_layout_on_interface(width,
+		height, mouse.x, mouse.y);
+	const bool_t order = vasal_client_wheel_buttons(&input->wheel,
+		IsMouseButtonPressed(MOUSE_BUTTON_LEFT),
+		IsMouseButtonPressed(MOUSE_BUTTON_RIGHT), mouse.x, mouse.y,
+		on_interface, &game->action);
+	if (!order) {
 		return;
 	}
 	float x = 0.0f;
 	float y = 0.0f;
-	vasal_client_camera_to_map(camera, width, height, input->wheel.press_x,
-		input->wheel.press_y, &x, &y);
-	game->action = chosen;
+	vasal_client_camera_to_map(camera, width, height, mouse.x, mouse.y, &x,
+		&y);
 	vasal_client_game_order(game, (int32_t)floorf(x), (int32_t)floorf(y),
-		chosen, shift);
+		game->action, shift);
 }

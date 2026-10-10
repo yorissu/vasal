@@ -253,10 +253,8 @@ void vasal_client_game_order(vasal_client_game_s* const game,
 		vasal_client_game_notify(game, "Select a vintaine first.");
 		return;
 	}
-	if (vasal_client_game_action_move != action) {
-		vasal_client_game_notify(game, "Attacking isn't available yet.");
-		return;
-	}
+	// Every action is a move for now.
+	(void)action;
 	const vasal_engine_map_s* const map = game->world->map;
 	const bool_t inside = (x >= 0) && (y >= 0) && (x < (int32_t)map->width)
 		&& (y < (int32_t)map->height);

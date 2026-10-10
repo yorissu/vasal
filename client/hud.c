@@ -2,6 +2,7 @@
 /// Plain shapes and raylib's default font, until the real art.
 
 #include "client/hud.h"
+#include "client/layout.h"
 #include "client/minimap.h"
 
 #include <raylib.h>
@@ -22,9 +23,8 @@
 static Texture2D _vasal_client_hud_minimap;
 static const vasal_engine_map_s* _vasal_client_hud_minimap_of = NULL;
 
-static const char* const _vasal_client_hud_actions[] = {
-	"move", "attack to point", "attack beyond"
-};
+static const char* const
+	_vasal_client_hud_actions[vasal_client_game_action_count] = { "move" };
 
 // Writes a prefix and a number into text, which holds 16 characters.
 static void _vasal_client_hud_number(char* const text,
@@ -57,13 +57,13 @@ static void _vasal_client_hud_number(char* const text,
 // spec: vintaines.pace#4
 static void _vasal_client_hud_groups(const vasal_client_game_s* const game,
 		const float height) {
-	const int box = 64;
-	const int gap = 6;
-	const int top = (int)height - box - 12;
+	const int box = vasal_client_layout_box;
 	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
 		const vasal_engine_world_group_s* const group =
 			vasal_client_game_group(game, g);
-		const int left = 12 + ((int)g * (box + gap));
+		int32_t left = 0;
+		int32_t top = 0;
+		vasal_client_layout_group(height, g, &left, &top);
 		const bool_t selected = 0U != (game->selection & ((uint32_t)1U << g));
 		const bool_t empty = 0U == group->troop_count;
 		DrawRectangle(left, top, box, box, _vasal_client_hud_panel);
@@ -177,16 +177,16 @@ static void _vasal_client_hud_wheel(const vasal_client_input_s* const input) {
 	const vasal_client_game_action_e hovered =
 		vasal_client_wheel_action(&input->wheel, mouse.x, mouse.y);
 	const float r = vasal_client_wheel_radius;
-	DrawCircle((int)input->wheel.press_x, (int)input->wheel.press_y, r,
+	DrawCircle((int)input->wheel.x, (int)input->wheel.y, r,
 		_vasal_client_hud_panel);
-	const float places[3][2] = {
-		{ 0.0f, -0.6f }, { -0.55f, 0.45f }, { 0.55f, 0.45f }
-	};
 	for (size_t a = 0U; a < (size_t)vasal_client_game_action_count; a++) {
 		const char* const name = _vasal_client_hud_actions[a];
 		const int width = MeasureText(name, 14);
-		const float place_x = input->wheel.press_x + (places[a][0] * r);
-		const float place_y = input->wheel.press_y + (places[a][1] * r);
+		float dx = 0.0f;
+		float dy = 0.0f;
+		vasal_client_wheel_place((vasal_client_game_action_e)a, &dx, &dy);
+		const float place_x = input->wheel.x + dx;
+		const float place_y = input->wheel.y + dy;
 		const int x = (int)place_x - (width / 2);
 		const int y = (int)place_y - 7;
 		DrawText(name, x, y, 14, ((size_t)hovered == a)

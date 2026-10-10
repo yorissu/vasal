@@ -513,10 +513,11 @@ story map.sight
 	milestone: 1
 	links: map.minimap map.camera troops.scout network.interest
 		security.visibility
-	description: A player sees only what their troops see. There is no
-		scouting mechanic of its own: every troop sees a circle around it,
-		whose radius depends on its type, and the player's sight is all
-		those circles together. Inside it the player sees the terrain in
+	description: A player sees only what their troops see, and what their
+		allies' troops see (map.visibility). There is no scouting mechanic
+		of its own: every troop sees a circle around it, whose radius
+		depends on its type, and the player's sight is all those circles
+		together. Inside it the player sees the terrain in
 		full color and every troop and NPC, in the main view and on the
 		minimap. Outside it the terrain is still drawn, grayed, and no
 		troops or NPCs are shown. The edge fades softly from color to gray.
@@ -531,8 +532,6 @@ story map.sight
 		then: The edge of sight fades softly from color to gray.
 	criterion 4: review proposed
 		then: Settlements are shown everywhere, inside sight or not.
-	criterion 5: scenario open
-		then: Whether allies share what their troops see.
 
 story map.contents
 	title: What a map holds
@@ -1033,9 +1032,9 @@ story vintaines.queue
 	milestone: 1
 	links: vintaines.orders vintaines.actions vintaines.attacks
 		client.render security.limits
-	description: Holding shift while giving an order (a right-click or a
-		choice on the wheel) queues it: it is carried out after the orders
-		already queued, instead of replacing them. Without shift, an order
+	description: Holding shift while giving an order (a right-click)
+		queues it: it is carried out after the orders already queued,
+		instead of replacing them. Without shift, an order
 		replaces the current order and the whole queue. So a player can
 		send a vintaine along a way of their choosing, or make it move and
 		then attack. Many RTS games do the same.
@@ -1111,37 +1110,43 @@ story vintaines.actions
 	title: The action wheel
 	milestone: 1
 	links: vintaines.orders client.input
-	description: A right-click gives the selected vintaines an order of
-		the current action toward the clicked point. Holding the right
-		button down instead opens a wheel of actions around the pointer,
-		such as move, attack up to the point and attack beyond the point;
-		releasing the button over one picks it and gives that order. The
-		action picked becomes the current one, so a plain right-click
-		repeats it. The most common actions also have keys.
-	value hold: open ticks
+	description: The right mouse button gives orders and the left one works
+		the interface. A right-click gives the selected vintaines an order of
+		the current action toward the clicked point. A left click on the map
+		opens a wheel of actions around the pointer instead; clicking an
+		action on it makes that action the current one, so the next
+		right-clicks order it, and clicking away from every action closes the
+		wheel. The wheel gives no orders itself. For now it holds one action,
+		move; the attacks come with combat. The most common actions may also
+		get keys.
 	criterion 1: unit
-		when: The player presses and releases the right button within
-			{vintaines.actions.hold} ticks.
-		then: The selected vintaines get an order of the current action.
+		when: The player right-clicks the map.
+		then: The selected vintaines get an order of the current action
+			toward the clicked point, and an open wheel closes.
 	criterion 2: unit
-		when: The player holds the right button for longer.
-		then: The wheel opens around the pointer and no order is given yet.
+		when: The player left-clicks the map while the wheel is closed.
+		then: The wheel opens around the pointer and no order is given.
 	criterion 3: unit
-		when: The player releases the button over an action on the wheel.
-		then: The selected vintaines get that order toward the point where
-			the wheel was opened, and it becomes the current action.
+		when: The player left-clicks an action on the open wheel.
+		then: It becomes the current action and the wheel closes; no order
+			is given.
 	criterion 4: unit
-		when: The player releases the button away from every action.
-		then: No order is given and the current action stays as it was.
+		when: The player left-clicks away from every action on the open
+			wheel.
+		then: The wheel closes and the current action stays as it was.
 	criterion 5: unit proposed
 		when: The player presses the key of an action.
 		then: It becomes the current action.
-	criterion 6: review open
-		then: The actions on the wheel, and which of them get keys.
-	criterion 7: review open
-		then: Whether a left click on the map, which selects nothing,
-			opens the wheel when something is selected (an idea of the
-			user's, not decided).
+	criterion 6: review
+		then: The wheel holds one action, move, until combat brings more;
+			which actions get keys is decided then.
+		why: The user's decision of 2026-10-11.
+	criterion 7: unit
+		then: No left click gives an order and no right click opens the
+			wheel. A left click on the bottom bar or the minimap opens no
+			wheel either.
+		why: The user's rule: everything of the interface is on the left
+			button, every order to troops on the right.
 
 story vintaines.modes
 	title: Vintaine modes
@@ -2139,11 +2144,11 @@ story client.input
 	criterion 1: review proposed
 		then: Keys 1 to 5 select vintaines and 6 the centenar, shift adds
 			or removes from the selection, Tab moves the focus, Z switches
-			the marching pace (vintaines.pace#4), the right
-			mouse button orders (held down, it opens the action wheel), the
-			mouse never selects, and Q, W, E and R set the
-			aggressive, guard, defensive and flee modes. There are no keys
-			to move the camera.
+			the marching pace (vintaines.pace#4), the right mouse button
+			orders, the left one opens the action wheel
+			(vintaines.actions), the mouse never selects, and Q, W, E and
+			R set the aggressive, guard, defensive and flee modes. There
+			are no keys to move the camera.
 	criterion 2: review proposed
 		when: The player releases shift while the browser shows a menu of
 			its own or while the game's tab is in the background.
@@ -2271,13 +2276,20 @@ story map.visibility
 	milestone: 2
 	links: map.sight security.visibility network.interest
 	description: Other armies, enemy or allied, and NPCs are shown only
-		inside the player's sight (map.sight), both in the main view and
-		on the minimap. This comes with the first other armies.
+		inside the sight of the player and their allies (map.sight), both
+		in the main view and on the minimap: allies share what their
+		troops see. This comes with the first other armies.
 	criterion 1: scenario
 		given: An enemy vintaine just inside the sight of one of the
 			player's troops, and one just outside it.
 		then: The first appears in the player's view and on the minimap,
 			the second in neither.
+	criterion 2: scenario
+		given: Two allied players, one's troops near an enemy vintaine,
+			the other's far away.
+		then: Both see the enemy vintaine: allies share what their troops
+			see, in the main view and on the minimap.
+		why: The user's decision of 2026-10-11.
 
 story simulation.steps
 	title: The order of a tick's steps

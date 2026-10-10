@@ -14,6 +14,7 @@ set(vasal_test_web_sources
 	${PROJECT_SOURCE_DIR}/client/depth.c
 	${PROJECT_SOURCE_DIR}/client/game.c
 	${PROJECT_SOURCE_DIR}/client/keys.c
+	${PROJECT_SOURCE_DIR}/client/layout.c
 	${PROJECT_SOURCE_DIR}/client/minimap.c
 	${PROJECT_SOURCE_DIR}/client/stress.c
 	${PROJECT_SOURCE_DIR}/client/wheel.c
