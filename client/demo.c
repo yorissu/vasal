@@ -5,6 +5,7 @@
 /// type and a few lone structures.
 
 #include "client/demo.h"
+#include "engine/rules.h"
 
 #include <string.h>
 
@@ -46,7 +47,9 @@ static void _vasal_client_demo_settlement(vasal_engine_map_s* const map,
 		const uint16_t x, const uint16_t y) {
 	vasal_engine_map_settlement_s* const settlement =
 		&map->settlements[map->settlement_count];
-	vasal_engine_map_settlement_defaults(settlement, type);
+	static vasal_engine_rules_s rules;
+	vasal_engine_rules_standard(&rules);
+	vasal_engine_rules_settlement_defaults(&rules, settlement, type);
 	size_t length = strlen(name);
 	if (length > (vasal_engine_map_name_capacity - 1U)) {
 		length = vasal_engine_map_name_capacity - 1U;

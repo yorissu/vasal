@@ -119,7 +119,7 @@ int main(void) {
 	vasal_engine_map_s* const map = &_vasal_tests_determinism_map;
 	vasal_engine_world_s* const world = &_vasal_tests_determinism_world;
 	_vasal_tests_determinism_map_make(map);
-	vasal_engine_world_start(world, map);
+	vasal_engine_world_start(world, map, NULL, 20261011U);
 	static const uint16_t spawns[3][2] = {
 		{ 10U, 10U }, { 90U, 15U }, { 30U, 90U }
 	};

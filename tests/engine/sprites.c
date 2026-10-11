@@ -1,9 +1,17 @@
 
 /// Tests of which sprite settlements and lone structures show.
 
+#include "engine/rules.h"
 #include "engine/sprites.h"
 
 #include "cairo.h"
+
+static vasal_engine_rules_s _vasal_tests_engine_sprites_standard;
+
+static const vasal_engine_rules_s* _vasal_tests_engine_sprites_rules(void) {
+	vasal_engine_rules_standard(&_vasal_tests_engine_sprites_standard);
+	return &_vasal_tests_engine_sprites_standard;
+}
 
 // spec: client.render#7
 cairo_test_new(engine_sprites, settlements_show_their_types_art) {
@@ -18,7 +26,8 @@ cairo_test_new(engine_sprites, settlements_show_their_types_art) {
 	};
 	for (size_t type = 0U; type < vasal_engine_map_settlement_types;
 			type++) {
-		vasal_engine_map_settlement_defaults(&settlement,
+		vasal_engine_rules_settlement_defaults(
+			_vasal_tests_engine_sprites_rules(), &settlement,
 			(vasal_engine_map_settlement_type_e)type);
 		for (uint16_t x = 0U; x < 50U; x++) {
 			settlement.position.x = x;
@@ -33,7 +42,8 @@ cairo_test_new(engine_sprites, settlements_show_their_types_art) {
 // spec: client.render#7
 cairo_test_new(engine_sprites, the_same_place_always_looks_the_same) {
 	vasal_engine_map_settlement_s settlement;
-	vasal_engine_map_settlement_defaults(&settlement,
+	vasal_engine_rules_settlement_defaults(
+		_vasal_tests_engine_sprites_rules(), &settlement,
 		vasal_engine_map_settlement_town);
 	settlement.position.x = 120U;
 	settlement.position.y = 45U;
@@ -41,7 +51,8 @@ cairo_test_new(engine_sprites, the_same_place_always_looks_the_same) {
 	cairo_assert_eq(vasal_engine_sprites_settlement(&settlement), sprite);
 	// Different places use different villages.
 	size_t seen = 0U;
-	vasal_engine_map_settlement_defaults(&settlement,
+	vasal_engine_rules_settlement_defaults(
+		_vasal_tests_engine_sprites_rules(), &settlement,
 		vasal_engine_map_settlement_village);
 	for (uint16_t x = 0U; x < 64U; x++) {
 		settlement.position.x = x;

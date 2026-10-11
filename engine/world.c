@@ -10,6 +10,7 @@
 /// A troop never steps onto an impassable tile.
 
 #include "engine/world.h"
+#include "engine/combat.h"
 
 // Places of a group's troops around its anchor, in 1/256 of a tile: a
 // sunflower pattern, about a tile apart, in a circle under 3 tiles across.
@@ -237,9 +238,13 @@ static vasal_engine_world_position_s _vasal_engine_world_target(
 	return place;
 }
 
-// Moves a troop by an offset, if the straight line there is clear.
+// Moves a troop by an offset, if the straight line there is clear and it
+// is in no duel.
 static void _vasal_engine_world_nudge(vasal_engine_world_troop_s* const troop,
 		const int32_t dx, const int32_t dy) {
+	if (0U != troop->duel) {
+		return;
+	}
 	const vasal_engine_world_position_s to = {
 		troop->position.x + dx, troop->position.y + dy
 	};
@@ -308,11 +313,22 @@ static void _vasal_engine_world_head_to(vasal_engine_world_group_s* const group,
 	group->moving = 0U < count;
 }
 
-// Starts a group's next queued order once it is done with its current one.
+// Sets a group on its way to the goal of an order, which becomes its post.
+static void _vasal_engine_world_obey(vasal_engine_world_group_s* const group,
+		const vasal_engine_map_point_s goal) {
+	_vasal_engine_world_head_to(group, goal);
+	group->steered = false;
+	group->ordered = group->moving;
+	group->goal = goal;
+	group->post = _vasal_engine_world_center(goal);
+}
+
+// Starts a group's next queued order once it is done with its current one,
+// unless it is fighting.
 // spec: vintaines.queue#2
 static void _vasal_engine_world_next_order(
 		vasal_engine_world_group_s* const group) {
-	if (group->moving || (0U == group->queue_count)) {
+	if (group->moving || group->fighting || (0U == group->queue_count)) {
 		return;
 	}
 	const vasal_engine_map_point_s goal = group->queue[0];
@@ -320,7 +336,7 @@ static void _vasal_engine_world_next_order(
 		group->queue[i - 1U] = group->queue[i];
 	}
 	group->queue_count--;
-	_vasal_engine_world_head_to(group, goal);
+	_vasal_engine_world_obey(group, goal);
 }
 
 // Moves a group's anchor along its path.
@@ -344,6 +360,10 @@ static void _vasal_engine_world_move_anchor(
 			budget -= distance;
 			group->waypoint_next++;
 			group->moving = group->waypoint_next < group->waypoint_count;
+			// Arrived where its order led.
+			if (!group->moving && !group->steered) {
+				group->ordered = false;
+			}
 		} else {
 			const vasal_engine_world_position_s before = group->anchor;
 			(void)_vasal_engine_world_step(&group->anchor, target, budget);
@@ -375,9 +395,18 @@ static void _vasal_engine_world_move_group(
 	_vasal_engine_world_next_order(group);
 	for (size_t i = 0U; i < group->troop_count; i++) {
 		vasal_engine_world_troop_s* const troop = &group->troops[i];
-		const vasal_engine_world_position_s target =
-			_vasal_engine_world_target(group, troop->position,
+		// A troop in a duel doesn't move; one combat sends somewhere goes
+		// there when it can in a straight line.
+		// spec: combat.duel#5
+		if (0U != troop->duel) {
+			continue;
+		}
+		vasal_engine_world_position_s target = troop->aim;
+		if (!troop->aiming
+				|| !_vasal_engine_world_clear(troop->position, troop->aim)) {
+			target = _vasal_engine_world_target(group, troop->position,
 				_vasal_engine_world_place(group, i));
+		}
 		const uint32_t speed = in_step ? slowest : (uint32_t)troop->speed;
 		uint32_t budget = (speed
 			* _vasal_engine_world_terrain(world, troop->position)) / 100U;
@@ -389,9 +418,22 @@ static void _vasal_engine_world_move_group(
 	_vasal_engine_world_separate(group);
 }
 
+// The rules of worlds started without rules.
+static vasal_engine_rules_s _vasal_engine_world_standard;
+
+// spec: rules.content#5
 void vasal_engine_world_start(vasal_engine_world_s* const world,
-	const vasal_engine_map_s* const map) {
+	const vasal_engine_map_s* const map,
+	const vasal_engine_rules_s* const rules, const uint64_t seed) {
 	world->map = map;
+	world->rules = rules;
+	if (NULL == rules) {
+		vasal_engine_rules_standard(&_vasal_engine_world_standard);
+		world->rules = &_vasal_engine_world_standard;
+	}
+	world->combat_random = vasal_engine_random_start(seed,
+		vasal_engine_random_combat);
+	world->shot_count = 0U;
 	world->tick = 0U;
 	world->next_id = 1U;
 	world->vasal_count = 0U;
@@ -409,6 +451,9 @@ size_t vasal_engine_world_add_vasal(vasal_engine_world_s* const world,
 	const size_t index = world->vasal_count;
 	vasal_engine_world_vasal_s* const vasal = &world->vasals[index];
 	vasal->id = world->next_id;
+	vasal->alliance = vasal->id;
+	vasal->kills = 0U;
+	vasal->npc = false;
 	world->next_id++;
 	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
 		vasal_engine_world_group_s* const group = &vasal->groups[g];
@@ -420,6 +465,19 @@ size_t vasal_engine_world_add_vasal(vasal_engine_world_s* const world,
 		group->queue_count = 0U;
 		group->pace = vasal_engine_world_pace_in_step;
 		group->moving = false;
+		// spec: vintaines.modes#8
+		group->mode = vasal_engine_world_mode_defensive;
+		group->post = group->anchor;
+		group->goal = at;
+		group->ordered = false;
+		group->fighting = false;
+		group->enemy = group->anchor;
+		group->attacker.vasal = vasal_engine_world_nobody;
+		group->attacker.group = vasal_engine_world_nobody;
+		group->attacker.troop = vasal_engine_world_nobody;
+		group->attacked = 0U;
+		group->replan = 0U;
+		group->steered = false;
 	}
 	world->vasal_count++;
 	return index;
@@ -445,9 +503,113 @@ bool_t vasal_engine_world_add_troop(vasal_engine_world_s* const world,
 	troop->position = target->anchor;
 	troop->id = world->next_id;
 	troop->speed = speed;
+	troop->unit = 0U;
+	troop->wounded = false;
+	troop->duel = 0U;
+	troop->partner.vasal = vasal_engine_world_nobody;
+	troop->partner.group = vasal_engine_world_nobody;
+	troop->partner.troop = vasal_engine_world_nobody;
+	troop->striking = false;
+	troop->timer = 0U;
+	troop->engaged = 0U;
+	troop->aim = troop->position;
+	troop->aiming = false;
+	troop->target = 0U;
+	troop->sighted = troop->partner;
 	world->next_id++;
 	target->troop_count++;
 	return true;
+}
+
+// spec: rules.content#5
+bool_t vasal_engine_world_add_unit(vasal_engine_world_s* const world,
+	const size_t vasal, const size_t group, const size_t unit) {
+	const vasal_engine_rules_s* const rules = world->rules;
+	if (unit >= rules->unit_count) {
+		return false;
+	}
+	const uint32_t speed = vasal_engine_rules_get(rules, unit,
+		vasal_engine_rules_unit_speed);
+	if (!vasal_engine_world_add_troop(world, vasal, group, (uint16_t)speed)) {
+		return false;
+	}
+	vasal_engine_world_group_s* const target =
+		&world->vasals[vasal].groups[group];
+	target->troops[target->troop_count - 1U].unit = (uint8_t)unit;
+	return true;
+}
+
+// Adds the troops of slots to a group.
+static void _vasal_engine_world_add_slots(vasal_engine_world_s* const world,
+		const size_t vasal, const size_t group,
+		const vasal_engine_rules_slot_s* const slots) {
+	for (size_t s = 0U; s < vasal_engine_rules_slots; s++) {
+		for (size_t i = 0U; i < slots[s].count; i++) {
+			(void)vasal_engine_world_add_unit(world, vasal, group,
+				slots[s].unit);
+		}
+	}
+}
+
+// spec: rules.content#5 centaine.centenar#2
+void vasal_engine_world_add_army(vasal_engine_world_s* const world,
+	const size_t vasal) {
+	if (vasal >= world->vasal_count) {
+		return;
+	}
+	const vasal_engine_rules_s* const rules = world->rules;
+	for (size_t g = 0U; g < vasal_engine_rules_vintaines; g++) {
+		_vasal_engine_world_add_slots(world, vasal, g, rules->start[g]);
+	}
+	if (vasal_engine_rules_none != rules->centenar) {
+		(void)vasal_engine_world_add_unit(world, vasal,
+			vasal_engine_world_centenar, rules->centenar);
+	}
+}
+
+// spec: npcs.bandits#1 rules.content#5
+size_t vasal_engine_world_add_camp(vasal_engine_world_s* const world,
+	const vasal_engine_map_point_s at) {
+	const size_t vasal = vasal_engine_world_add_vasal(world, at);
+	if (vasal_engine_world_vasals_max == vasal) {
+		return vasal;
+	}
+	world->vasals[vasal].alliance = vasal_engine_world_bandits;
+	world->vasals[vasal].npc = true;
+	_vasal_engine_world_add_slots(world, vasal, 0U, world->rules->camp);
+	world->vasals[vasal].groups[0].mode = vasal_engine_world_mode_guard;
+	return vasal;
+}
+
+void vasal_engine_world_set_mode(vasal_engine_world_s* const world,
+	const size_t vasal, const uint32_t mask,
+	const vasal_engine_world_mode_e mode) {
+	if (vasal >= world->vasal_count) {
+		return;
+	}
+	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
+		if (0U != (mask & ((uint32_t)1U << g))) {
+			vasal_engine_world_group_s* const group =
+				&world->vasals[vasal].groups[g];
+			group->mode = mode;
+			group->post = group->anchor;
+		}
+	}
+}
+
+// spec: combat.enemies#1 combat.enemies#2
+bool_t vasal_engine_world_enemies(const vasal_engine_world_s* const world,
+	const size_t a, const size_t b) {
+	return world->vasals[a].alliance != world->vasals[b].alliance;
+}
+
+void vasal_engine_world_steer(vasal_engine_world_s* const world,
+	const size_t vasal, const size_t group,
+	const vasal_engine_map_point_s to) {
+	vasal_engine_world_group_s* const steered =
+		&world->vasals[vasal].groups[group];
+	_vasal_engine_world_head_to(steered, to);
+	steered->steered = true;
 }
 
 // A value kept within 0 and highest.
@@ -509,12 +671,12 @@ static bool_t _vasal_engine_world_order(vasal_engine_world_s* const world,
 		x = _vasal_engine_world_clamp(x, (int32_t)map->width - 1);
 		y = _vasal_engine_world_clamp(y, (int32_t)map->height - 1);
 		const vasal_engine_map_point_s goal = { (uint16_t)x, (uint16_t)y };
-		if (queued && (group->moving || (0U < group->queue_count))) {
+		if (queued && (group->ordered || (0U < group->queue_count))) {
 			group->queue[group->queue_count] = goal;
 			group->queue_count++;
 		} else {
 			group->queue_count = 0U;
-			_vasal_engine_world_head_to(group, goal);
+			_vasal_engine_world_obey(group, goal);
 		}
 	}
 	return true;
@@ -543,12 +705,15 @@ void vasal_engine_world_set_pace(vasal_engine_world_s* const world,
 }
 
 // spec: simulation.tick#1
+// spec: simulation.steps#1
 void vasal_engine_world_tick(vasal_engine_world_s* const world) {
+	vasal_engine_combat_targets(world);
 	for (size_t v = 0U; v < world->vasal_count; v++) {
 		for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
 			_vasal_engine_world_move_group(world,
 				&world->vasals[v].groups[g]);
 		}
 	}
+	vasal_engine_combat_resolve(world);
 	world->tick++;
 }

@@ -24,7 +24,7 @@ static vasal_engine_world_s* _vasal_tests_engine_world_start(
 	for (size_t y = 0U; y < 50U; y++) {
 		map->tiles[(y * 60U) + 30U] = 1U;
 	}
-	vasal_engine_world_start(world, map);
+	vasal_engine_world_start(world, map, NULL, 1U);
 	const vasal_engine_map_point_s spawn = { 10U, 10U };
 	(void)vasal_engine_world_add_vasal(world, spawn);
 	return world;
@@ -221,7 +221,7 @@ static vasal_engine_world_s* _vasal_tests_engine_world_ford(
 			map->tiles[(y * 64U) + x] = (uint8_t)((river && !ford) ? 1U : 0U);
 		}
 	}
-	vasal_engine_world_start(world, map);
+	vasal_engine_world_start(world, map, NULL, 1U);
 	const vasal_engine_map_point_s spawn = { 5U, 5U };
 	(void)vasal_engine_world_add_vasal(world, spawn);
 	return world;
@@ -300,7 +300,7 @@ cairo_test_new(engine_world, troops_do_not_stack_in_a_narrow_pass) {
 			map->tiles[(y * 60U) + x] = (uint8_t)(pass ? 0U : 1U);
 		}
 	}
-	vasal_engine_world_start(world, map);
+	vasal_engine_world_start(world, map, NULL, 1U);
 	const vasal_engine_map_point_s spawn = { 30U, 10U };
 	(void)vasal_engine_world_add_vasal(world, spawn);
 	// All the troops start on the same spot.

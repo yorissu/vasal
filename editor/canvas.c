@@ -8,6 +8,7 @@
 #include "editor/canvas.h"
 #include "editor/art.h"
 #include "editor/document.h"
+#include "editor/ruleset.h"
 #include "engine/sprites.h"
 
 #include <math.h>
@@ -173,8 +174,8 @@ static bool_t _vasal_editor_canvas_add(vasal_editor_state_s* const state,
 		vasal_engine_map_settlement_s* const settlement =
 			&map->settlements[count];
 		settlement->name[0] = '\0';
-		vasal_engine_map_settlement_defaults(settlement,
-			state->settlement_type);
+		vasal_engine_rules_settlement_defaults(vasal_editor_ruleset_rules(),
+			settlement, state->settlement_type);
 		map->settlement_count++;
 	} else if (vasal_editor_state_tool_spawn == state->tool) {
 		map->spawns[count].radius = 6U;

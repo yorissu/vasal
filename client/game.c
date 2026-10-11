@@ -70,7 +70,7 @@ void vasal_client_game_anchor_at(const vasal_client_game_s* const game,
 void vasal_client_game_start(vasal_client_game_s* const game,
 	const vasal_engine_map_s* const map) {
 	game->world = &_vasal_client_game_world;
-	vasal_engine_world_start(game->world, map);
+	vasal_engine_world_start(game->world, map, NULL, 1U);
 	vasal_engine_map_point_s spawn = { 0U, 0U };
 	if (0U < map->spawn_count) {
 		spawn = map->spawns[0].position;

@@ -16,7 +16,7 @@ static vasal_engine_world_s* _vasal_tests_engine_queue_start(void) {
 	vasal_engine_map_s* const map = &_vasal_tests_engine_queue_map;
 	(void)vasal_engine_map_clear(map, 60U, 60U);
 	vasal_engine_world_s* const world = &_vasal_tests_engine_queue_world;
-	vasal_engine_world_start(world, map);
+	vasal_engine_world_start(world, map, NULL, 1U);
 	const vasal_engine_map_point_s spawn = { 10U, 10U };
 	(void)vasal_engine_world_add_vasal(world, spawn);
 	for (size_t i = 0U; i < 5U; i++) {

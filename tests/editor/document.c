@@ -3,6 +3,7 @@
 
 #include "editor/document.h"
 #include "engine/mapfile.h"
+#include "engine/rules.h"
 
 #include "cairo.h"
 
@@ -21,7 +22,9 @@ static vasal_engine_map_s* _vasal_tests_editor_document_sample(void) {
 	};
 	map->terrains[map->terrain_count] = road;
 	map->terrain_count++;
-	vasal_engine_map_settlement_defaults(&map->settlements[0],
+	vasal_engine_rules_s rules;
+	vasal_engine_rules_standard(&rules);
+	vasal_engine_rules_settlement_defaults(&rules, &map->settlements[0],
 		vasal_engine_map_settlement_town);
 	map->settlements[0].position.x = 20U;
 	map->settlements[0].position.y = 15U;

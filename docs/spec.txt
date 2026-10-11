@@ -557,6 +557,65 @@ story map.contents
 			refused.
 
 # ======================================================================
+# Rules
+# ======================================================================
+
+story rules.content
+	title: The game's rules are content
+	milestone: 1
+	links: troops.types combat.strike vintaines.modes settlements.types
+		editor.rules mapfile.format server.web
+	description: The game is made by designing, not by programming. Unit
+		types (how they move, see, fight and what they cost), settlement
+		types, the army a vasal starts with, bandit camps and the values of
+		combat are content, like maps: the designer makes them in the
+		editor, saves them as a rules file and uploads it to the server
+		with the maps. The engine has mechanisms and no unit names or
+		numbers of its own; it reads all of them from the rules. Every
+		value is a field with a label, a help text and a range, so files
+		are checked and the editor shows new fields without being changed.
+		The server hands the rules and the map to every client that joins,
+		and the match plays by them; uploading new versions changes them
+		for every match and client from then on.
+	criterion 1: unit
+		then: The rules hold the unit types, each with a name, a color and
+			its values: ranged or melee, speed, sight, skill, parry, block,
+			strike interval, kill chance, range, reload, sidearm penalty,
+			chase distance, whether it is careful once wounded, cost and
+			salary; and the combat values, the settlement types' defaults,
+			the starting army and the bandits of a camp.
+		why: The user's wish of 2026-10-11: to work on the game only
+			declaratively, with the engine hidden.
+	criterion 2: unit
+		then: A rules file is read back unchanged; a file with a wrong
+			magic word, version or checksum, cut short or too long, with a
+			value outside its field's range or naming a unit type that
+			doesn't exist, is refused.
+	criterion 3: unit
+		then: The standard rules, which clients use until the server sends
+			rules and the editor starts from, hold the first build's unit
+			types: spearman, swordsman, archer, thrower, scout, a captain
+			for centenars, and bandits.
+	criterion 4: unit
+		then: A new settlement takes its type's default values from the
+			rules.
+	criterion 5: unit
+		then: A world takes troop speeds and unit types, the starting army,
+			the bandits of camps and every combat value from the rules it
+			is given.
+	criterion 6: unit
+		when: A client joins.
+		then: The server sends it the rules and the map it plays on, and
+			the client builds the match from them.
+	criterion 7: unit
+		when: The designer uploads a rules file or a map file to the server
+			with its admin key.
+		then: The server checks the file, keeps it on disk and serves it to
+			every client that joins from then on. Without the right key, or
+			when the file doesn't read, it refuses the upload and keeps
+			what it had.
+
+# ======================================================================
 # Troops
 # ======================================================================
 
@@ -564,8 +623,10 @@ story troops.types
 	title: Troop types
 	milestone: 2
 	links: combat.ranged combat.sidearm
-	description: Melee infantry: spearman, swordsman, battle axe
-		infantry, heavy infantry, light infantry. Ranged: archer, thrower
+	description: Unit types are content (rules.content): the designer
+		defines them. The standard rules start with these. Melee
+		infantry: spearman, swordsman, battle axe infantry, heavy
+		infantry, light infantry. Ranged: archer, thrower
 		(axe, knife or spear), crossbowman, slinger. Ranged types differ in
 		range and damage. Scouts see farther and move faster but fight
 		poorly (troops.scout). No cavalry or siege units. The first build
@@ -2253,6 +2314,31 @@ story editor.tools
 			speed and sight, ready to paint; their values can be changed.
 		why: The user's request of 2026-10-11: painting forest or grass
 			makes the ground slow and hidden on its own.
+
+story editor.rules
+	title: Designing the rules
+	milestone: 1
+	links: rules.content editor.tools editor.files
+	description: Beside maps, the editor edits the rules: unit types,
+		settlement types, the starting army, bandit camps and combat
+		values, with undo and redo. It opens and saves rules files and
+		uploads them, and maps, to a server.
+	criterion 1: unit
+		then: The editor starts from the standard rules.
+	criterion 2: unit
+		then: The editor opens rules files; a file that doesn't read
+			changes nothing.
+	criterion 3: unit
+		then: Every change to the rules can be undone and redone exactly;
+			a change that would leave them invalid is undone at once.
+	criterion 4: review
+		then: Every value of a unit type, settlement type, the starting
+			army, the camp and combat can be set, with its help text; unit
+			types can be added, renamed and removed.
+	criterion 5: review
+		then: The editor uploads the rules and the map to a server given
+			its address and admin key, and says whether the server took
+			them.
 
 story editor.validation
 	title: Map checks

@@ -9,6 +9,7 @@
 #include "editor/canvas.h"
 #include "editor/document.h"
 #include "editor/files.h"
+#include "editor/ruleset.h"
 
 #include <raygui.h>
 
@@ -453,8 +454,8 @@ static void _vasal_editor_panel_settlement(vasal_editor_state_s* const state,
 		"Village;Town;Castle;City", &type);
 	if (type != (int)settlement->type) {
 		vasal_editor_document_begin(0U);
-		vasal_engine_map_settlement_defaults(settlement,
-			(vasal_engine_map_settlement_type_e)type);
+		vasal_engine_rules_settlement_defaults(vasal_editor_ruleset_rules(),
+			settlement, (vasal_engine_map_settlement_type_e)type);
 		vasal_editor_document_changed();
 		vasal_editor_document_end();
 	}

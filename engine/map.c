@@ -63,34 +63,6 @@ bool_t vasal_engine_map_clear(vasal_engine_map_s* const map,
 	return true;
 }
 
-// Default values per settlement type: radius, requirement, capture time
-// (ticks), bonus, income and flags. Placeholders until tuning.
-static const uint32_t _vasal_engine_map_defaults
-	[vasal_engine_map_settlement_types][6] = {
-	{ 5U, 10U, 200U, 50U, 10U, vasal_engine_map_flag_spearman },
-	{ 7U, 20U, 300U, 100U, 20U,
-		vasal_engine_map_flag_spearman | vasal_engine_map_flag_archer },
-	{ 8U, 30U, 400U, 150U, 30U,
-		vasal_engine_map_flag_swordsman | vasal_engine_map_flag_centenars },
-	{ 10U, 40U, 600U, 200U, 40U,
-		vasal_engine_map_flag_swordsman | vasal_engine_map_flag_archer
-			| vasal_engine_map_flag_centenars }
-};
-
-// spec: settlements.types#1
-void vasal_engine_map_settlement_defaults(
-	vasal_engine_map_settlement_s* const settlement,
-	const vasal_engine_map_settlement_type_e type) {
-	const uint32_t* const values = _vasal_engine_map_defaults[type];
-	settlement->type = (uint8_t)type;
-	settlement->radius = (uint16_t)values[0];
-	settlement->requirement = (uint16_t)values[1];
-	settlement->capture_time = values[2];
-	settlement->bonus = values[3];
-	settlement->income = values[4];
-	settlement->flags = values[5];
-}
-
 bool_t vasal_engine_map_contains(const vasal_engine_map_s* const map,
 	const uint16_t x, const uint16_t y) {
 	return (x < map->width) && (y < map->height);

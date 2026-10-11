@@ -42,16 +42,11 @@ typedef enum vasal_engine_map_settlement_type_e {
 	vasal_engine_map_settlement_types
 } vasal_engine_map_settlement_type_e;
 
-/// Settlement flags: whether it has centenars, and which troop types it
-/// recruits.
+/// Settlement flags: bit 0 whether it has centenars; bit 1 + i whether it
+/// recruits unit type i of the rules (engine/rules.h).
 #define vasal_engine_map_flag_centenars 0x01U
-#define vasal_engine_map_flag_spearman 0x02U
-#define vasal_engine_map_flag_swordsman 0x04U
-#define vasal_engine_map_flag_archer 0x08U
-#define vasal_engine_map_flag_thrower 0x10U
-#define vasal_engine_map_flag_scout 0x20U
 /// Every flag a settlement may have.
-#define vasal_engine_map_flags 0x3fU
+#define vasal_engine_map_flags 0x7fffffffU
 
 /// A tile's coordinates.
 typedef struct vasal_engine_map_point_s {
@@ -180,13 +175,6 @@ void vasal_engine_map_standard_terrains(vasal_engine_map_s* const map);
 /// 0 or longer than vasal_engine_map_side_max.
 bool_t vasal_engine_map_clear(vasal_engine_map_s* const map,
 	const uint16_t width, const uint16_t height);
-
-/// Gives a settlement its type and that type's default values, which the
-/// editor may then change (placeholders until the settlement types are
-/// tuned). The name and position are left as they are.
-void vasal_engine_map_settlement_defaults(
-	vasal_engine_map_settlement_s* const settlement,
-	const vasal_engine_map_settlement_type_e type);
 
 /// Whether the tile is on the map.
 bool_t vasal_engine_map_contains(const vasal_engine_map_s* const map,
