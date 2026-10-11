@@ -33,4 +33,33 @@ bool_t vasal_editor_ruleset_end(void);
 bool_t vasal_editor_ruleset_undo(void);
 bool_t vasal_editor_ruleset_redo(void);
 
+/// A number that changes whenever the rules change, so the editor knows
+/// when they were changed since they were last saved.
+uint32_t vasal_editor_ruleset_revision(void);
+
+/// Adds a unit type at the end, as one operation: a melee type with the
+/// first standard type's values, named "unit <n>". Returns its index, or
+/// vasal_engine_rules_none when there are vasal_engine_rules_units_max.
+uint8_t vasal_editor_ruleset_add_unit(void);
+
+/// Adds a copy of a unit type at the end, named after it, as one
+/// operation. Returns its index, or vasal_engine_rules_none when it can't.
+uint8_t vasal_editor_ruleset_duplicate_unit(const uint8_t unit);
+
+/// Removes a unit type, as one operation. The slots of it are emptied, a
+/// centenar of it becomes none, the settlement types stop offering it, and
+/// every reference to a later type follows it down by one. The last type
+/// can't be removed. Returns false when nothing was removed.
+bool_t vasal_editor_ruleset_remove_unit(const uint8_t unit);
+
+/// Swaps a unit type with the next one, as one operation, references
+/// included. Returns false when it is the last.
+bool_t vasal_editor_ruleset_swap_units(const uint8_t unit);
+
+/// What a settlement's flags (bit 0 centenars, bit 1 + i unit type i)
+/// become when unit type removed is removed, or units a and b swap (pass
+/// vasal_engine_rules_none as removed then).
+uint32_t vasal_editor_ruleset_flags_after(const uint32_t flags,
+	const uint8_t removed, const uint8_t a, const uint8_t b);
+
 #endif

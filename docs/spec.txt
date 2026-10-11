@@ -2262,10 +2262,15 @@ story editor.platform
 	milestone: 0
 	links: client.platform
 	description: The map editor is a separate program, also C compiled to
-		WebAssembly and drawn with raylib, with raygui for its widgets. It
-		is one HTML file with everything embedded, opened straight from
-		disk in a browser: no server is needed to make maps, and the game's
-		server never serves it, so players can't reach it.
+		WebAssembly and drawn with raylib, with raygui for its widgets in a
+		dark theme and its own typeface. It is one HTML file with everything
+		embedded, opened straight from disk in a browser: no server is
+		needed to make maps, and the game's server never serves it, so
+		players can't reach it. It has three pages: the map, the rules and
+		the server. It stays a web page rather than a native program: one
+		file to open on any computer with nothing to install, uploads go
+		through the browser like the game's own requests, and its C code
+		would build natively with raylib as it is, should that be wanted.
 	criterion 1: review
 		then: The editor opens from its file in a browser with no server
 			running.
@@ -2281,6 +2286,14 @@ story editor.files
 	criterion 1: unit
 		when: A map is saved and opened again.
 		then: The map is unchanged.
+	criterion 2: review proposed
+		then: A map or rules file opens from the file picker or dropped on
+			the editor, told apart by its contents.
+	criterion 3: review proposed
+		then: The editor keeps drafts of the map and the rules in the
+			browser as they change and opens them again when it starts; it
+			shows what has changes not saved, and asks before throwing them
+			away.
 
 story editor.tools
 	title: Editing
@@ -2314,6 +2327,22 @@ story editor.tools
 			speed and sight, ready to paint; their values can be changed.
 		why: The user's request of 2026-10-11: painting forest or grass
 			makes the ground slow and hidden on its own.
+	criterion 8: unit proposed
+		then: Besides the brush, terrain is painted along straight lines
+			and by filling the joined area of a tile's type (refused, with
+			nothing changed, when it is larger than one change can hold);
+			terrain types are picked from the map; objects are copied and
+			moved by keys; each such change undoes in one step.
+		why: The user's request of 2026-10-11 for an editor packed with
+			ease-of-life features.
+	criterion 9: review proposed
+		then: The map view colors the ground by terrain, by speed or by
+			sight, shows a grid and a minimap, and the status bar names the
+			tile under the pointer with its terrain's speed and sight.
+	criterion 10: review proposed
+		then: The brush shows the tiles it would paint before painting,
+			its size changes by keys and the wheel, and a placing tool
+			shows what it would place under the pointer.
 
 story editor.rules
 	title: Designing the rules
@@ -2339,6 +2368,12 @@ story editor.rules
 		then: The editor uploads the rules and the map to a server given
 			its address and admin key, and says whether the server took
 			them.
+	criterion 6: unit proposed
+		then: Unit types can be copied and reordered; removing or moving
+			one makes the starting army, the camp, the centenar and the
+			settlement types' offers follow, so the rules stay valid.
+	criterion 7: review proposed
+		then: The editor fetches the map and the rules a server plays.
 
 story editor.validation
 	title: Map checks
@@ -2351,6 +2386,8 @@ story editor.validation
 		then: The checks report a settlement or spawn area on impassable
 			tiles, overlapping capture areas, and settlements that can't be
 			reached from any spawn area.
+	criterion 2: review proposed
+		then: Clicking a problem selects and shows what it is about.
 
 # ======================================================================
 # Simulation

@@ -41,6 +41,9 @@ void vasal_editor_document_changed(void);
 void vasal_editor_document_paint(const uint16_t x, const uint16_t y,
 	const uint8_t terrain);
 
+/// How many more tiles the open operation can change.
+size_t vasal_editor_document_room(void);
+
 /// Ends the operation; it is dropped when it changed nothing.
 void vasal_editor_document_end(void);
 

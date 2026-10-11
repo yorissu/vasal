@@ -4,25 +4,109 @@
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<title>Vasal map editor</title>
+		<title>Vasal editor</title>
 		<style>
 			html, body {
 				margin: 0;
 				height: 100%;
 				overflow: hidden;
-				background: #202020;
+				background: #18191c;
 			}
-			canvas { display: block; }
+			canvas { display: block; outline: none; }
+			#drop {
+				position: fixed;
+				inset: 0;
+				display: none;
+				align-items: center;
+				justify-content: center;
+				background: rgba(24, 25, 28, 0.8);
+				border: 3px dashed #4e8dff;
+				color: #dee1e6;
+				font: 24px sans-serif;
+				pointer-events: none;
+			}
 		</style>
 	</head>
 	<body>
-		<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
-		<input id="open" type="file" accept=".vasalmap" hidden>
+		<canvas id="canvas" tabindex="0"
+			oncontextmenu="event.preventDefault()"></canvas>
+		<div id="drop">Drop a map or rules file to open it</div>
+		<input id="open" type="file" accept=".vasalmap,.vasalrules" hidden>
 		<script>
 			var Module = { canvas: document.getElementById("canvas") };
 
-			// Opening: the editor calls vasalEditorOpen(); the chosen file
-			// is copied into the editor's buffer and handed over.
+			// What arrived for the editor, which takes one item a frame by
+			// calling vasalEditorNext(): files ({ bytes, origin }) and the
+			// server's answers ({ request, status, text }).
+			var vasalEditorQueue = [];
+
+			// The editor's memory. Emscripten keeps it in a global; raylib's
+			// link options leave it off Module.
+			function vasalEditorHeap() {
+				return HEAPU8;
+			}
+
+			// Text in and out of the editor's text buffer, as UTF-8 ending
+			// in a zero.
+			function vasalEditorWrite(text) {
+				var start = Module._vasal_editor_files_text();
+				var capacity = Module._vasal_editor_files_text_capacity();
+				var bytes = new TextEncoder().encode(text)
+					.slice(0, capacity - 1);
+				vasalEditorHeap().set(bytes, start);
+				vasalEditorHeap()[start + bytes.length] = 0;
+			}
+			function vasalEditorRead() {
+				var start = Module._vasal_editor_files_text();
+				var end = start;
+				while (vasalEditorHeap()[end] !== 0) {
+					end++;
+				}
+				return new TextDecoder().decode(
+					vasalEditorHeap().slice(start, end));
+			}
+
+			function vasalEditorNext() {
+				var item = vasalEditorQueue.shift();
+				if (!item) {
+					return;
+				}
+				if (item.bytes) {
+					var capacity = Module._vasal_editor_files_capacity();
+					if (item.bytes.length > capacity) {
+						Module._vasal_editor_files_opened(0, item.origin);
+						return;
+					}
+					vasalEditorHeap().set(item.bytes,
+						Module._vasal_editor_files_buffer());
+					Module._vasal_editor_files_opened(item.bytes.length,
+						item.origin);
+					return;
+				}
+				vasalEditorWrite(item.text.slice(0, 400));
+				Module._vasal_editor_files_answered(item.request,
+					item.status);
+			}
+
+			function vasalEditorArrive(data, origin) {
+				vasalEditorQueue.push({
+					bytes: new Uint8Array(data), origin: origin
+				});
+			}
+
+			// The file the editor wrote into its buffer, as bytes.
+			function vasalEditorBytes() {
+				var start = Module._vasal_editor_files_buffer();
+				var size = Module._vasal_editor_files_size();
+				return vasalEditorHeap().slice(start, start + size);
+			}
+
+			// The lines the editor wrote into its text buffer.
+			function vasalEditorLines() {
+				return vasalEditorRead().split("\n");
+			}
+
+			// Opening: the picker, or a file dropped on the page.
 			var vasalEditorPicker = document.getElementById("open");
 			function vasalEditorOpen() {
 				vasalEditorPicker.value = "";
@@ -30,34 +114,192 @@
 			}
 			vasalEditorPicker.addEventListener("change", function () {
 				var file = vasalEditorPicker.files[0];
-				if (!file) {
-					return;
+				if (file) {
+					file.arrayBuffer().then(function (data) {
+						vasalEditorArrive(data, 0);
+					});
 				}
-				file.arrayBuffer().then(function (data) {
-					var bytes = new Uint8Array(data);
-					var capacity = Module._vasal_editor_files_capacity();
-					if (bytes.length > capacity) {
-						Module._vasal_editor_files_opened(0);
-						return;
-					}
-					var start = Module._vasal_editor_files_buffer();
-					Module.HEAPU8.set(bytes, start);
-					Module._vasal_editor_files_opened(bytes.length);
-				});
+			});
+			var vasalEditorDrop = document.getElementById("drop");
+			window.addEventListener("dragover", function (event) {
+				event.preventDefault();
+				vasalEditorDrop.style.display = "flex";
+			});
+			window.addEventListener("dragleave", function (event) {
+				if (!event.relatedTarget) {
+					vasalEditorDrop.style.display = "none";
+				}
+			});
+			window.addEventListener("drop", function (event) {
+				event.preventDefault();
+				vasalEditorDrop.style.display = "none";
+				var files = event.dataTransfer.files;
+				for (var i = 0; i < files.length; i++) {
+					files[i].arrayBuffer().then(function (data) {
+						vasalEditorArrive(data, 0);
+					});
+				}
 			});
 
-			// Saving: the editor writes the map file into its buffer and
-			// calls vasalEditorSave(name); the browser downloads it.
-			function vasalEditorSave(name) {
-				var start = Module._vasal_editor_files_buffer();
-				var size = Module._vasal_editor_files_size();
-				var bytes = Module.HEAPU8.slice(start, start + size);
+			// Saving: the editor writes the file into its buffer and its
+			// name into the text buffer; the browser downloads it.
+			function vasalEditorSave(extension) {
 				var link = document.createElement("a");
-				link.href = URL.createObjectURL(new Blob([bytes]));
-				link.download = name + ".vasalmap";
+				link.href = URL.createObjectURL(new Blob([vasalEditorBytes()]));
+				link.download = vasalEditorLines()[0] + extension;
 				link.click();
-				URL.revokeObjectURL(link.href);
+				setTimeout(function () {
+					URL.revokeObjectURL(link.href);
+				}, 1000);
 			}
+
+			// The server: its address with http:// when it has none, and
+			// no slash at the end.
+			function vasalEditorServer(address) {
+				var server = address.trim();
+				if (!/^https?:\/\//.test(server)) {
+					server = "http://" + server;
+				}
+				return server.replace(/\/+$/, "");
+			}
+
+			function vasalEditorAnswer(request, status, text) {
+				vasalEditorQueue.push({
+					request: request, status: status, text: text
+				});
+			}
+
+			// Requests go one after the other, as the server takes one
+			// upload at a time.
+			var vasalEditorChain = Promise.resolve();
+
+			// Uploading: the file goes as the body of a POST, labelled as
+			// plain text so the browser sends it without asking first.
+			function vasalEditorUpload(request, kind) {
+				var bytes = vasalEditorBytes();
+				var lines = vasalEditorLines();
+				var url = vasalEditorServer(lines[0]) + "/upload/" + kind
+					+ "?key=" + lines[1];
+				vasalEditorChain = vasalEditorChain.then(function () {
+					return fetch(url, {
+						method: "POST",
+						headers: { "Content-Type": "text/plain" },
+						body: bytes
+					}).then(function (response) {
+						return response.text().then(function (text) {
+							vasalEditorAnswer(request, response.status, text);
+						});
+					}).catch(function (error) {
+						vasalEditorAnswer(request, 0, String(error));
+					});
+				});
+			}
+
+			// Fetching what the server plays.
+			function vasalEditorFetch(request, kind) {
+				var url = vasalEditorServer(vasalEditorLines()[0]) + "/" + kind;
+				vasalEditorChain = vasalEditorChain.then(function () {
+					return fetch(url, { cache: "no-store" })
+						.then(function (response) {
+							if (!response.ok) {
+								vasalEditorAnswer(request, response.status,
+									"");
+								return;
+							}
+							return response.arrayBuffer().then(function (data) {
+								vasalEditorArrive(data, 2);
+								vasalEditorAnswer(request, response.status,
+									"");
+							});
+						}).catch(function (error) {
+							vasalEditorAnswer(request, 0, String(error));
+						});
+				});
+			}
+
+			// Drafts, in the browser's IndexedDB, which holds even the
+			// largest maps.
+			var vasalEditorDatabase = null;
+			function vasalEditorStore(work) {
+				if (!window.indexedDB) {
+					return;
+				}
+				if (vasalEditorDatabase) {
+					work(vasalEditorDatabase);
+					return;
+				}
+				var opening = indexedDB.open("vasal-editor", 1);
+				opening.onupgradeneeded = function () {
+					opening.result.createObjectStore("drafts");
+				};
+				opening.onsuccess = function () {
+					vasalEditorDatabase = opening.result;
+					work(vasalEditorDatabase);
+				};
+			}
+			function vasalEditorKeep(kind) {
+				var bytes = vasalEditorBytes();
+				vasalEditorStore(function (database) {
+					database.transaction("drafts", "readwrite")
+						.objectStore("drafts").put(bytes, kind);
+				});
+			}
+			function vasalEditorRestore() {
+				vasalEditorStore(function (database) {
+					var drafts = database.transaction("drafts")
+						.objectStore("drafts");
+					var rules = drafts.get("rules");
+					rules.onsuccess = function () {
+						if (rules.result) {
+							vasalEditorArrive(rules.result, 1);
+						}
+						var map = drafts.get("map");
+						map.onsuccess = function () {
+							if (map.result) {
+								vasalEditorArrive(map.result, 1);
+							}
+						};
+					};
+				});
+			}
+
+			// The server's address, and its key when asked to.
+			function vasalEditorRemember(withKey) {
+				var lines = vasalEditorLines();
+				try {
+					localStorage.setItem("vasal.editor.address", lines[0]);
+					if (withKey) {
+						localStorage.setItem("vasal.editor.key", lines[1]);
+					} else {
+						localStorage.removeItem("vasal.editor.key");
+					}
+				} catch (error) {
+					// Storage is off: nothing is remembered.
+				}
+			}
+			function vasalEditorRecall() {
+				var address = "";
+				var key = "";
+				try {
+					address = localStorage.getItem("vasal.editor.address")
+						|| "";
+					key = localStorage.getItem("vasal.editor.key") || "";
+				} catch (error) {
+					// Storage is off: nothing was remembered.
+				}
+				vasalEditorWrite(address + "\n" + key);
+			}
+
+			// The editor's shortcuts, which the browser would take
+			// otherwise.
+			window.addEventListener("keydown", function (event) {
+				var key = event.key.toLowerCase();
+				var command = (event.ctrlKey || event.metaKey)
+					&& ["s", "o", "z", "y", "d", "a"].indexOf(key) >= 0;
+				if (command || key === "f1" || key === "tab") {
+					event.preventDefault();
+				}
+			});
 		</script>
 		{{{ SCRIPT }}}
 	</body>

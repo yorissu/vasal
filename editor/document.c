@@ -224,6 +224,12 @@ void vasal_editor_document_paint(const uint16_t x, const uint16_t y,
 	_vasal_editor_document_revision++;
 }
 
+size_t vasal_editor_document_room(void) {
+	return _vasal_editor_document_open
+		? (_vasal_editor_document_changes_max - _vasal_editor_document_used)
+		: 0U;
+}
+
 void vasal_editor_document_end(void) {
 	if (!_vasal_editor_document_open) {
 		return;

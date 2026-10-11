@@ -4,3 +4,4 @@
 * text=auto eol=lf
 # Except the art, which is binary.
 *.png binary
+*.ttf binary

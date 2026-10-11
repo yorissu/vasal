@@ -19,7 +19,9 @@ set(vasal_test_web_sources
 	${PROJECT_SOURCE_DIR}/client/stress.c
 	${PROJECT_SOURCE_DIR}/client/wheel.c
 	${PROJECT_SOURCE_DIR}/editor/document.c
-	${PROJECT_SOURCE_DIR}/editor/ruleset.c)
+	${PROJECT_SOURCE_DIR}/editor/edits.c
+	${PROJECT_SOURCE_DIR}/editor/ruleset.c
+	${PROJECT_SOURCE_DIR}/editor/state.c)
 add_executable(tests main.c ${vasal_test_sources} ${vasal_test_web_sources})
 set_target_properties(tests PROPERTIES OUTPUT_NAME vasal_tests)
 target_include_directories(tests SYSTEM PRIVATE ${vasal_cairo_include})
