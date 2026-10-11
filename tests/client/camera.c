@@ -19,7 +19,7 @@ static vasal_client_game_s* _vasal_tests_client_camera_start(void) {
 	const vasal_engine_map_spawn_s spawn = { { 100U, 100U }, 5U };
 	map->spawns[0] = spawn;
 	map->spawn_count = 1U;
-	vasal_client_game_start(&_vasal_tests_client_camera_game, map);
+	vasal_client_game_start(&_vasal_tests_client_camera_game, map, NULL);
 	return &_vasal_tests_client_camera_game;
 }
 

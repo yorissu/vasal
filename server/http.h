@@ -1,7 +1,8 @@
 
 /// The part of HTTP/1.1 the server needs: reading a request's head (request
 /// line and header fields) and writing a response's head. Requests are only
-/// read, never trusted: anything unusual is malformed.
+/// read, never trusted: anything unusual is malformed. Responses let any
+/// page read them, so the editor, opened from disk, can upload.
 
 #ifndef vasal__server__http_h
 #define vasal__server__http_h
@@ -14,6 +15,7 @@
 /// A request method, as far as the server cares.
 typedef enum vasal_server_http_method_e {
 	vasal_server_http_method_get,
+	vasal_server_http_method_post,
 	vasal_server_http_method_other
 } vasal_server_http_method_e;
 
@@ -26,6 +28,15 @@ typedef struct vasal_server_http_request_s {
 	const char*                path;
 	/// The path's length in bytes.
 	size_t                     path_length;
+	/// The query after the path's '?', without it, and its length; empty
+	/// when there is none. Points into the data, not terminated.
+	const char*                query;
+	size_t                     query_length;
+	/// The size of the body that follows the head (its Content-Length
+	/// field), 0 without one.
+	size_t                     content_length;
+	/// The size of the head, where the body starts.
+	size_t                     head_length;
 } vasal_server_http_request_s;
 
 /// How far reading a request got.
@@ -43,7 +54,10 @@ typedef enum vasal_server_http_status_e {
 	vasal_server_http_status_ok,
 	vasal_server_http_status_bad_request,
 	vasal_server_http_status_not_found,
-	vasal_server_http_status_method_not_allowed
+	vasal_server_http_status_method_not_allowed,
+	vasal_server_http_status_forbidden,
+	vasal_server_http_status_too_large,
+	vasal_server_http_status_busy
 } vasal_server_http_status_e;
 
 /// Reads a request head from the first size bytes received. The request is

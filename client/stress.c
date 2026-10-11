@@ -10,9 +10,6 @@
 #define _vasal_client_stress_near_distance 14
 #define _vasal_client_stress_march 30
 
-// Troop speeds, as the player's (client/game.c).
-static const uint16_t _vasal_client_stress_speeds[3] = { 20U, 22U, 26U };
-
 // Where the near vasals stand around the player, in steps of the near
 // distance.
 static const int32_t _vasal_client_stress_around[vasal_client_stress_near][2]
@@ -77,8 +74,8 @@ static void _vasal_client_stress_add(vasal_engine_world_s* const world,
 	}
 	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
 		for (size_t t = 0U; t < vasal_engine_world_troops; t++) {
-			(void)vasal_engine_world_add_troop(world, vasal, g,
-				_vasal_client_stress_speeds[t % 3U]);
+			(void)vasal_engine_world_add_unit(world, vasal, g,
+				t % (size_t)world->rules->unit_count);
 		}
 	}
 }

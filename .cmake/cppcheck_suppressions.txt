@@ -29,8 +29,10 @@ misra-c2012-15.1
 # 15.5 (advisory): early returns (guard clauses).
 misra-c2012-15.5
 
-# 21.6 (required): the server's log writes with stdio.
+# 21.6 (required): the server's log writes with stdio, and its files
+# replace a file atomically with rename.
 misra-c2012-21.6:*/server/log.c
+misra-c2012-21.6:*/server/files.c
 
 # 21.5 (required): the server stops on SIGINT and SIGTERM through signalfd.
 misra-c2012-21.5:*/server/signals.c

@@ -1,7 +1,8 @@
 
-/// The game client, running in the browser. It asks the server for the
-/// match's map file and falls back to the built-in demonstration map when
-/// there is none, then runs the game: input, simulation, camera, drawing.
+/// The game client, running in the browser. When it joins, it asks the
+/// server for the game's rules and the match's map, falling back to the
+/// standard rules and the built-in demonstration map when there are none,
+/// then runs the game: input, simulation, camera, drawing.
 /// Until the server runs the match (milestone 3), the client simulates the
 /// player's centaine itself.
 
@@ -16,6 +17,7 @@
 #include <raylib.h>
 
 static vasal_engine_map_s _vasal_client_main_map;
+static vasal_engine_rules_s _vasal_client_main_rules;
 static vasal_client_game_s _vasal_client_main_game;
 static vasal_client_camera_s _vasal_client_main_camera;
 static vasal_client_input_s _vasal_client_main_input;
@@ -39,7 +41,7 @@ static char _vasal_client_main_report[160];
 
 static void _vasal_client_main_play(void) {
 	vasal_client_game_start(&_vasal_client_main_game,
-		&_vasal_client_main_map);
+		&_vasal_client_main_map, &_vasal_client_main_rules);
 	_vasal_client_main_stressed = 0 != emscripten_run_script_int(
 		"/[?&]stress/.test(location.search) ? 1 : 0");
 	if (_vasal_client_main_stressed) {
@@ -103,6 +105,31 @@ static void _vasal_client_main_failed(void* const argument) {
 	_vasal_client_main_play();
 }
 
+// The server sent the rules: play by them if they read well, else by the
+// standard rules; then ask for the map.
+// spec: rules.content#6
+static void _vasal_client_main_ruled(void* const argument, void* const data,
+		const int size) {
+	(void)argument;
+	uint16_t version = 0U;
+	const vasal_engine_rules_read_e outcome = vasal_engine_rules_read(
+		(const uint8_t*)data, (size_t)size, &_vasal_client_main_rules,
+		&version);
+	if (vasal_engine_rules_read_ok != outcome) {
+		vasal_engine_rules_standard(&_vasal_client_main_rules);
+	}
+	emscripten_async_wget_data("map", NULL, _vasal_client_main_loaded,
+		_vasal_client_main_failed);
+}
+
+// The server sent no rules: play by the standard rules.
+static void _vasal_client_main_unruled(void* const argument) {
+	(void)argument;
+	vasal_engine_rules_standard(&_vasal_client_main_rules);
+	emscripten_async_wget_data("map", NULL, _vasal_client_main_loaded,
+		_vasal_client_main_failed);
+}
+
 // Runs and draws one frame. The browser calls it once per display refresh.
 static void _vasal_client_main_update(void) {
 	const float seconds = GetFrameTime();
@@ -148,8 +175,8 @@ int main(void) {
 	SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 	InitWindow(1280, 720, "vasal");
 	vasal_client_keys_start(&_vasal_client_main_input.keys);
-	emscripten_async_wget_data("map", NULL, _vasal_client_main_loaded,
-		_vasal_client_main_failed);
+	emscripten_async_wget_data("rules", NULL, _vasal_client_main_ruled,
+		_vasal_client_main_unruled);
 	emscripten_set_main_loop(_vasal_client_main_update, 0, true);
 	return 0;
 }

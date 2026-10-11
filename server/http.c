@@ -26,7 +26,10 @@ static const char* const _vasal_server_http_status_lines[] = {
 	"200 OK",
 	"400 Bad Request",
 	"404 Not Found",
-	"405 Method Not Allowed"
+	"405 Method Not Allowed",
+	"403 Forbidden",
+	"413 Content Too Large",
+	"503 Service Unavailable"
 };
 
 // The error bodies, in the order of vasal_server_http_status_e.
@@ -34,7 +37,10 @@ static const char* const _vasal_server_http_reasons[] = {
 	"",
 	"bad request\n",
 	"not found\n",
-	"method not allowed\n"
+	"method not allowed\n",
+	"wrong admin key, or uploads are off\n",
+	"the file is too large\n",
+	"another upload is going on, try again\n"
 };
 
 // Finds the empty line ending a head. Returns the head's size including it,
@@ -73,11 +79,56 @@ static bool_t _vasal_server_http_field_value(const char character) {
 	return (0x09U == byte) || ((0x20U <= byte) && (0x7fU != byte));
 }
 
-// Reads the header fields, from at to the end of the head. Each line is a
-// token, a colon and a value.
-static bool_t _vasal_server_http_fields(const char* const data,
-		const size_t end, const size_t start) {
+// Whether a field's name, from name to before its colon, is
+// Content-Length, in any case.
+static bool_t _vasal_server_http_is_length(const char* const data,
+		const size_t name, const size_t end) {
+	static const char wanted[] = "content-length";
+	if ((end - name) != (sizeof(wanted) - 1U)) {
+		return false;
+	}
+	for (size_t i = 0U; i < (sizeof(wanted) - 1U); i++) {
+		uint8_t code = (uint8_t)data[name + i];
+		if ((code >= (uint8_t)'A') && (code <= (uint8_t)'Z')) {
+			code = (uint8_t)(code + 0x20U);
+		}
+		if (code != (uint8_t)wanted[i]) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// Reads a Content-Length value: digits only, around optional spaces, at
+// most 9 of them. Returns false when it isn't one.
+static bool_t _vasal_server_http_length(const char* const data,
+		const size_t start, const size_t end, size_t* const length) {
 	size_t at = start;
+	while ((at < end) && ((' ' == data[at]) || ('\t' == data[at]))) {
+		at++;
+	}
+	size_t value = 0U;
+	size_t digits = 0U;
+	while ((at < end) && (data[at] >= '0') && (data[at] <= '9')) {
+		const uint8_t code = (uint8_t)data[at];
+		value = (value * 10U) + ((size_t)code - (size_t)'0');
+		digits++;
+		at++;
+	}
+	while ((at < end) && ((' ' == data[at]) || ('\t' == data[at]))) {
+		at++;
+	}
+	*length = value;
+	return (0U < digits) && (9U >= digits) && (at == end);
+}
+
+// Reads the header fields, from at to the end of the head. Each line is a
+// token, a colon and a value. A Content-Length field gives the body's
+// length.
+static bool_t _vasal_server_http_fields(const char* const data,
+		const size_t end, const size_t start, size_t* const content_length) {
+	size_t at = start;
+	*content_length = 0U;
 	while ((at + 2U) <= end) {
 		if (('\r' == data[at]) && ('\n' == data[at + 1U])) {
 			return (at + 2U) == end;
@@ -89,7 +140,9 @@ static bool_t _vasal_server_http_fields(const char* const data,
 		if ((name == at) || (at >= end) || (':' != data[at])) {
 			return false;
 		}
+		const bool_t length = _vasal_server_http_is_length(data, name, at);
 		at++;
+		const size_t value = at;
 		while ((at < end) && _vasal_server_http_field_value(data[at])) {
 			at++;
 		}
@@ -97,9 +150,40 @@ static bool_t _vasal_server_http_fields(const char* const data,
 				|| ('\n' != data[at + 1U])) {
 			return false;
 		}
+		if (length && !_vasal_server_http_length(data, value, at,
+				content_length)) {
+			return false;
+		}
 		at += 2U;
 	}
 	return false;
+}
+
+// Reads a request target from at on: visible characters, whose path ends
+// at a query or fragment. Gives the path's length, where the query starts
+// (0 for none) and its length. Returns where the target ends.
+static size_t _vasal_server_http_target(const char* const data,
+		const size_t end, const size_t start, size_t* const path_length,
+		size_t* const query, size_t* const query_length) {
+	size_t at = start;
+	while ((at < end) && _vasal_server_http_visible(data[at])
+			&& ('?' != data[at]) && ('#' != data[at])) {
+		at++;
+	}
+	*path_length = at - start;
+	if ((at < end) && ('?' == data[at])) {
+		at++;
+		*query = at;
+		while ((at < end) && _vasal_server_http_visible(data[at])
+				&& ('#' != data[at])) {
+			at++;
+		}
+		*query_length = at - *query;
+	}
+	while ((at < end) && _vasal_server_http_visible(data[at])) {
+		at++;
+	}
+	return at;
 }
 
 // spec: network.handshake#2
@@ -127,19 +211,13 @@ vasal_server_http_parse_e vasal_server_http_parse(const char* const data,
 	at++;
 
 	// The target: visible characters starting with a slash, followed by one
-	// space. The path ends at a query or fragment.
+	// space.
 	const size_t target = at;
 	size_t path_length = 0U;
-	bool_t path_ended = false;
-	while ((at < end) && _vasal_server_http_visible(data[at])) {
-		if (('?' == data[at]) || ('#' == data[at])) {
-			path_ended = true;
-		}
-		if (!path_ended) {
-			path_length++;
-		}
-		at++;
-	}
+	size_t query = 0U;
+	size_t query_length = 0U;
+	at = _vasal_server_http_target(data, end, at, &path_length, &query,
+		&query_length);
 	if ((target == at) || ('/' != data[target]) || (' ' != data[at])) {
 		return vasal_server_http_parse_malformed;
 	}
@@ -152,16 +230,29 @@ vasal_server_http_parse_e vasal_server_http_parse(const char* const data,
 	}
 	at += 10U;
 
-	if (!_vasal_server_http_fields(data, end, at)) {
+	size_t content_length = 0U;
+	if (!_vasal_server_http_fields(data, end, at, &content_length)) {
 		return vasal_server_http_parse_malformed;
 	}
 
 	const bool_t get = (3U == method_length) && ('G' == data[0])
 		&& ('E' == data[1]) && ('T' == data[2]);
-	request->method = get ? vasal_server_http_method_get
-		: vasal_server_http_method_other;
+	const bool_t post = (4U == method_length) && ('P' == data[0])
+		&& ('O' == data[1]) && ('S' == data[2]) && ('T' == data[3]);
+	request->method = vasal_server_http_method_other;
+	if (get) {
+		request->method = vasal_server_http_method_get;
+	} else if (post) {
+		request->method = vasal_server_http_method_post;
+	} else {
+		// Neither.
+	}
 	request->path = &data[target];
 	request->path_length = path_length;
+	request->query = (0U == query) ? &data[target + path_length] : &data[query];
+	request->query_length = query_length;
+	request->content_length = content_length;
+	request->head_length = end;
 	return vasal_server_http_parse_complete;
 }
 
@@ -217,11 +308,13 @@ size_t vasal_server_http_head(char* const buffer, const size_t capacity,
 		length);
 	if (vasal_server_http_status_method_not_allowed == status) {
 		fits = fits && _vasal_server_http_append(buffer, capacity, &used,
-			"\r\nAllow: GET");
+			"\r\nAllow: GET, POST");
 	}
+	// spec: rules.content#7
 	fits = fits && _vasal_server_http_append(buffer, capacity, &used,
 		"\r\nCache-Control: no-cache"
 		"\r\nX-Content-Type-Options: nosniff"
+		"\r\nAccess-Control-Allow-Origin: *"
 		"\r\nConnection: close\r\n\r\n");
 	return fits ? used : 0U;
 }

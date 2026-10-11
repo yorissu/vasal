@@ -9,7 +9,8 @@ add_library(vasal_server_modules STATIC
 	network.c
 	options.c
 	response.c
-	signals.c)
+	signals.c
+	upload.c)
 target_link_libraries(vasal_server_modules PUBLIC vasal_engine)
 target_compile_definitions(vasal_server_modules PUBLIC
 	_POSIX_C_SOURCE=200809L)

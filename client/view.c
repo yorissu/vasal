@@ -20,9 +20,11 @@
 #define _vasal_client_view_centenar (Color){ 236, 190, 60, 255 }
 #define _vasal_client_view_ring (Color){ 255, 255, 255, 140 }
 #define _vasal_client_view_focus_ring (Color){ 255, 255, 255, 230 }
-// Other vasals' troops, until alliances have colors: dulled, no accent.
-#define _vasal_client_view_other (Color){ 112, 120, 150, 255 }
-#define _vasal_client_view_other_rim (Color){ 60, 64, 80, 255 }
+// Other vasals' troops, until alliances have colors: a dark rim; bandits'
+// brown; arrows.
+#define _vasal_client_view_other_rim (Color){ 50, 56, 90, 255 }
+#define _vasal_client_view_bandit_rim (Color){ 90, 52, 30, 255 }
+#define _vasal_client_view_arrow (Color){ 40, 30, 20, 255 }
 
 // The most troops and sprites drawn at once.
 #define _vasal_client_view_troops_max                                         \
@@ -230,6 +232,9 @@ static size_t _vasal_client_view_gather(const vasal_client_game_s* const game,
 					troops[count].own = own;
 					troops[count].sprite = -1;
 					troops[count].sight = 1.0f;
+					troops[count].unit = group->troops[t].unit;
+					troops[count].wounded = group->troops[t].wounded;
+					troops[count].npc = world->vasals[v].npc;
 					count++;
 				}
 			}
@@ -262,6 +267,9 @@ static size_t _vasal_client_view_sprite(const vasal_client_game_s* const game,
 	things[count].own = false;
 	things[count].sprite = (int32_t)sprite;
 	things[count].sight = vasal_client_game_sight_at(game, x, y);
+	things[count].unit = 0U;
+	things[count].wounded = false;
+	things[count].npc = false;
 	return count + 1U;
 }
 
@@ -325,6 +333,81 @@ static void _vasal_client_view_draw_sprite(
 		(Vector2){ 0.0f, 0.0f }, 0.0f, tint);
 }
 
+// A color darkened to a share in percent.
+static Color _vasal_client_view_darker(const Color color, const int share) {
+	const int r = ((int)color.r * share) / 100;
+	const int g = ((int)color.g * share) / 100;
+	const int b = ((int)color.b * share) / 100;
+	const Color darker = {
+		(unsigned char)r, (unsigned char)g, (unsigned char)b, color.a
+	};
+	return darker;
+}
+
+// Draws a troop: a rim in its side's color (the player's bright, others'
+// dark, bandits' brown) around its unit type's color, darker when
+// wounded; centenars larger, with a golden rim.
+// spec: client.render#4 rules.content#1
+static void _vasal_client_view_troop(const vasal_client_game_s* const game,
+		const vasal_client_depth_troop_s* const troop, const float sx,
+		const float sy, const float scale) {
+	const vasal_engine_rules_s* const rules = game->world->rules;
+	const bool_t centenar = troop->centenar;
+	const float radius = (centenar ? 0.45f : 0.32f) * scale;
+	const Vector2 at = { sx, sy };
+	Color rim = _vasal_client_view_other_rim;
+	if (troop->own) {
+		rim = centenar ? _vasal_client_view_centenar
+			: _vasal_client_view_alliance;
+	} else if (troop->npc) {
+		rim = _vasal_client_view_bandit_rim;
+	} else {
+		// Another vasal's.
+	}
+	Color body = _vasal_client_view_color(
+		rules->units[troop->unit % rules->unit_count].color);
+	if (!troop->own) {
+		body = _vasal_client_view_darker(body, 75);
+	}
+	if (troop->wounded) {
+		body = _vasal_client_view_darker(body, 55);
+	}
+	DrawCircleV(at, radius + fmaxf(1.5f, 0.12f * scale), rim);
+	DrawCircleV(at, radius, body);
+}
+
+// Draws the shots of the last tick, as short arrows flying from the
+// shooter to the target over the tick.
+// spec: combat.ranged#5
+static void _vasal_client_view_shots(const vasal_client_game_s* const game,
+		const vasal_client_camera_s* const camera, const float width,
+		const float height) {
+	const vasal_engine_world_s* const world = game->world;
+	const float part = fminf(game->pending
+		* (float)vasal_engine_world_tick_rate, 1.0f);
+	const float precision = (float)vasal_engine_map_precision;
+	for (size_t i = 0U; i < world->shot_count; i++) {
+		const vasal_engine_world_shot_s* const shot = &world->shots[i];
+		const float fx = (float)shot->from.x / precision;
+		const float fy = (float)shot->from.y / precision;
+		const float tx = (float)shot->to.x / precision;
+		const float ty = (float)shot->to.y / precision;
+		const float head = fminf(part + 0.25f, 1.0f);
+		float ax = 0.0f;
+		float ay = 0.0f;
+		float bx = 0.0f;
+		float by = 0.0f;
+		vasal_client_camera_to_screen(camera, width, height,
+			fx + ((tx - fx) * part), fy + ((ty - fy) * part), &ax, &ay);
+		vasal_client_camera_to_screen(camera, width, height,
+			fx + ((tx - fx) * head), fy + ((ty - fy) * head), &bx, &by);
+		// Arrows fly above the ground.
+		const float lift = 0.6f * camera->scale;
+		DrawLineEx((Vector2){ ax, ay - lift }, (Vector2){ bx, by - lift },
+			fmaxf(1.0f, 0.05f * camera->scale), _vasal_client_view_arrow);
+	}
+}
+
 // Draws troops lower on the screen later, in front.
 // spec: client.render#2 client.render#4
 static size_t _vasal_client_view_troops(const vasal_client_game_s* const game,
@@ -345,18 +428,7 @@ static size_t _vasal_client_view_troops(const vasal_client_game_s* const game,
 			_vasal_client_view_draw_sprite(camera, &troops[i], sx, sy);
 			continue;
 		}
-		const bool_t centenar = troops[i].centenar;
-		const float radius = (centenar ? 0.45f : 0.32f) * scale;
-		const Vector2 at = { sx, sy };
-		Color rim = _vasal_client_view_other_rim;
-		Color body = _vasal_client_view_other;
-		if (troops[i].own) {
-			rim = centenar ? _vasal_client_view_centenar
-				: _vasal_client_view_accent;
-			body = _vasal_client_view_alliance;
-		}
-		DrawCircleV(at, radius + fmaxf(1.0f, 0.06f * scale), rim);
-		DrawCircleV(at, radius, body);
+		_vasal_client_view_troop(game, &troops[i], sx, sy, scale);
 	}
 	return count;
 }
@@ -368,5 +440,8 @@ size_t vasal_client_view_draw(const vasal_client_game_s* const game,
 		_vasal_client_view_terrain(game, camera, width, height);
 	}
 	_vasal_client_view_groups(game, camera, width, height);
-	return _vasal_client_view_troops(game, camera, width, height);
+	const size_t drawn = _vasal_client_view_troops(game, camera, width,
+		height);
+	_vasal_client_view_shots(game, camera, width, height);
+	return drawn;
 }

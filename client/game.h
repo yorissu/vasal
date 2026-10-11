@@ -42,12 +42,18 @@ typedef struct vasal_client_game_s {
 		[vasal_engine_world_troops];
 	vasal_engine_world_position_s previous_anchors
 		[vasal_engine_world_vasals_max][vasal_engine_world_groups];
+	/// Which troop each previous position was, as a troop that dies leaves
+	/// its place to another.
+	uint32_t previous_ids[vasal_engine_world_vasals_max]
+		[vasal_engine_world_groups][vasal_engine_world_troops];
 } vasal_client_game_s;
 
-/// Starts a game on the map with the player's centaine at the map's first
-/// spawn area.
+/// Starts a game on the map by the rules (the standard rules when NULL;
+/// both must outlive the game): the player's starting army at the map's
+/// first spawn area, and the bandits of every camp of the map.
 void vasal_client_game_start(vasal_client_game_s* const game,
-	const vasal_engine_map_s* const map);
+	const vasal_engine_map_s* const map,
+	const vasal_engine_rules_s* const rules);
 
 /// Simulates the time passed since the last update, in whole ticks.
 void vasal_client_game_update(vasal_client_game_s* const game,
@@ -100,6 +106,10 @@ void vasal_client_game_cycle_focus(vasal_client_game_s* const game);
 /// every one of them marches in step, else in step. Their orders and queues
 /// stay as they are.
 void vasal_client_game_toggle_pace(vasal_client_game_s* const game);
+
+/// Sets the mode of the selected groups.
+void vasal_client_game_set_mode(vasal_client_game_s* const game,
+	const vasal_engine_world_mode_e mode);
 
 /// Gives the selected groups an order of the action toward a tile, which
 /// may be off the map (the order is then refused with a notice). A queued

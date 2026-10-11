@@ -156,6 +156,8 @@ Required rules, only where named:
 
 - 21.6 in `server/log.c`: stdio. The log writes formatted lines to
   standard output.
+- 21.6 in `server/files.c`: `rename` from stdio. An upload replaces the
+  map or rules file atomically: written beside it, then renamed over it.
 - 21.5 in `server/signals.c`: `signal.h`. The server stops cleanly on
   SIGINT and SIGTERM, through signalfd.
 - 11.3 in `server/network.c`: casts to `struct sockaddr*`. The sockets API

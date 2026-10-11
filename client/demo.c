@@ -2,7 +2,7 @@
 /// The demonstration map, drawn from simple shapes so it is the same every
 /// time: a river running north to south with a ford where the road crosses
 /// it, two forests, patches of tall and short grass, a settlement of every
-/// type and a few lone structures.
+/// type, a few lone structures and two bandit camps.
 
 #include "client/demo.h"
 #include "engine/rules.h"
@@ -85,6 +85,12 @@ static void _vasal_client_demo_settlements(vasal_engine_map_s* const map) {
 		map->decorations[i].kind = structures[i][2];
 	}
 	map->decoration_count = 6U;
+	// Two bandit camps: one near the start, one beyond the river.
+	map->camps[0].position.x = 88U;
+	map->camps[0].position.y = 132U;
+	map->camps[1].position.x = 160U;
+	map->camps[1].position.y = 118U;
+	map->camp_count = 2U;
 }
 
 void vasal_client_demo_make(vasal_engine_map_s* const map) {

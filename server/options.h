@@ -14,8 +14,12 @@ typedef struct vasal_server_options_s {
 	uint16_t    port;
 	/// The folder holding the client's files.
 	const char* web;
-	/// The match's map file, or NULL for none.
+	/// The match's map file and rules file, or NULL for none; uploads
+	/// replace them.
 	const char* map;
+	const char* rules;
+	/// The key uploads must give, or NULL: uploads are off then.
+	const char* admin_key;
 } vasal_server_options_s;
 
 /// What the command line asks for.
@@ -32,9 +36,10 @@ typedef enum vasal_server_options_parse_e {
 extern const char* const vasal_server_options_usage;
 
 /// Reads the command line (count and arguments as main gets them) into
-/// options, starting from the defaults: address 127.0.0.1, port 8080, and
-/// no web folder, which is required. When the command line is invalid, error
-/// points at a sentence saying what is wrong.
+/// options, starting from the defaults: address 127.0.0.1, port 8080, no
+/// map, rules or admin key, and no web folder, which is required. When the
+/// command line is invalid, error points at a sentence saying what is
+/// wrong.
 vasal_server_options_parse_e vasal_server_options_parse(const int count,
 	char* const* const arguments, vasal_server_options_s* const options,
 	const char** const error);

@@ -38,6 +38,15 @@ static void _vasal_client_input_keys(vasal_client_input_s* const input,
 	if (IsKeyPressed(KEY_Z)) {
 		vasal_client_game_toggle_pace(game);
 	}
+	// spec: client.input#1
+	static const int modes[vasal_engine_world_modes] = {
+		KEY_Q, KEY_W, KEY_E, KEY_R
+	};
+	for (size_t m = 0U; m < (size_t)vasal_engine_world_modes; m++) {
+		if (IsKeyPressed(modes[m])) {
+			vasal_client_game_set_mode(game, (vasal_engine_world_mode_e)m);
+		}
+	}
 }
 
 // spec: client.input#1

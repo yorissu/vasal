@@ -41,7 +41,7 @@ cairo_test_new(server_http, path_ends_at_query_and_fragment) {
 cairo_test_new(server_http, other_methods_are_other) {
 	vasal_server_http_request_s request = { 0 };
 	cairo_assert_eq(_vasal_tests_server_http_parse(
-		"POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n", &request),
+		"PUT / HTTP/1.1\r\nContent-Length: 0\r\n\r\n", &request),
 		vasal_server_http_parse_complete);
 	cairo_assert_eq(request.method, vasal_server_http_method_other);
 	cairo_assert_eq(_vasal_tests_server_http_parse(
@@ -115,7 +115,37 @@ cairo_test_new(server_http, method_not_allowed_names_get) {
 	cairo_assert_gt(length, 0U);
 	head[length] = '\0';
 	cairo_assert_true(0 == strncmp(head, "HTTP/1.1 405 ", 13U));
-	cairo_assert_true(NULL != strstr(head, "\r\nAllow: GET\r\n"));
+	cairo_assert_true(NULL != strstr(head, "\r\nAllow: GET, POST\r\n"));
+}
+
+// spec: rules.content#7
+cairo_test_new(server_http, reads_an_upload_head) {
+	vasal_server_http_request_s request = { 0 };
+	static const char head[] = "POST /upload/rules?key=s3cret#x HTTP/1.1\r\n"
+		"Host: localhost\r\ncontent-LENGTH:  1234 \r\n\r\nbody";
+	cairo_assert_eq(_vasal_tests_server_http_parse(head, &request),
+		vasal_server_http_parse_complete);
+	cairo_assert_eq(request.method, vasal_server_http_method_post);
+	cairo_assert_eq(request.path_length, 13U);
+	cairo_assert_true(0 == strncmp(request.path, "/upload/rules", 13U));
+	cairo_assert_eq(request.query_length, 10U);
+	cairo_assert_true(0 == strncmp(request.query, "key=s3cret", 10U));
+	cairo_assert_eq(request.content_length, 1234U);
+	cairo_assert_eq(request.head_length, sizeof(head) - 5U);
+	// A length that isn't a number is malformed.
+	cairo_assert_eq(_vasal_tests_server_http_parse("POST / HTTP/1.1\r\n"
+		"Content-Length: 12a\r\n\r\n", &request),
+		vasal_server_http_parse_malformed);
+}
+
+// spec: rules.content#7
+cairo_test_new(server_http, responses_may_be_read_by_any_page) {
+	char head[512];
+	const size_t length = vasal_server_http_head(head, sizeof head - 1U,
+		vasal_server_http_status_ok, "text/plain", 3U);
+	head[length] = '\0';
+	cairo_assert_true(NULL != strstr(head,
+		"\r\nAccess-Control-Allow-Origin: *\r\n"));
 }
 
 // spec: server.web#3

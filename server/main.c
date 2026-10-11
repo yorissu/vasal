@@ -23,7 +23,7 @@ int main(const int count, char* arguments[]) {
 		return 2;
 	}
 
-	if (!vasal_server_files_load(options.web, options.map)) {
+	if (!vasal_server_files_load(options.web, options.map, options.rules)) {
 		return 1;
 	}
 	return vasal_server_network_run(&options) ? 0 : 1;

@@ -16,7 +16,7 @@ cairo_test_new(client_stress, ten_thousand_troops_and_five_hundred_near) {
 	map->spawns[0] = spawn;
 	map->spawn_count = 1U;
 	vasal_client_game_s* const game = &_vasal_tests_client_stress_game;
-	vasal_client_game_start(game, map);
+	vasal_client_game_start(game, map, NULL);
 	vasal_client_stress_s stress;
 	vasal_client_stress_start(&stress, game);
 	const vasal_engine_world_s* const world = game->world;

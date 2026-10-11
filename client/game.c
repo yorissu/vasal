@@ -5,16 +5,6 @@
 
 #include <math.h>
 
-// Troops of the starting centaine per vintaine, a placeholder until the
-// starting army is decided; the last vintaine starts empty, so the rules of
-// empty vintaines can be tried.
-static const uint8_t _vasal_client_game_start_troops
-	[vasal_engine_world_groups] = { 20U, 20U, 16U, 12U, 0U, 1U };
-
-// Troop speeds in 1/256 of a tile per tick (placeholders until tuning):
-// about 1.6 tiles a second, a little faster for some.
-static const uint16_t _vasal_client_game_speeds[3] = { 20U, 22U, 26U };
-
 static vasal_engine_world_s _vasal_client_game_world;
 
 // Remembers every vasal's positions before a tick moves them.
@@ -27,6 +17,7 @@ static void _vasal_client_game_remember(vasal_client_game_s* const game) {
 			game->previous_anchors[v][g] = group->anchor;
 			for (size_t t = 0U; t < group->troop_count; t++) {
 				game->previous_troops[v][g][t] = group->troops[t].position;
+				game->previous_ids[v][g][t] = group->troops[t].id;
 			}
 		}
 	}
@@ -49,10 +40,14 @@ static void _vasal_client_game_between(const vasal_client_game_s* const game,
 void vasal_client_game_position_at(const vasal_client_game_s* const game,
 	const size_t vasal, const size_t group, const size_t troop,
 	float* const x, float* const y) {
-	_vasal_client_game_between(game,
-		game->previous_troops[vasal][group][troop],
-		game->world->vasals[vasal].groups[group].troops[troop].position, x,
-		y);
+	const vasal_engine_world_troop_s* const now =
+		&game->world->vasals[vasal].groups[group].troops[troop];
+	vasal_engine_world_position_s before =
+		game->previous_troops[vasal][group][troop];
+	if (game->previous_ids[vasal][group][troop] != now->id) {
+		before = now->position;
+	}
+	_vasal_client_game_between(game, before, now->position, x, y);
 }
 
 void vasal_client_game_troop_at(const vasal_client_game_s* const game,
@@ -67,20 +62,21 @@ void vasal_client_game_anchor_at(const vasal_client_game_s* const game,
 		vasal_client_game_group(game, group)->anchor, x, y);
 }
 
+// spec: rules.content#6 rules.content#5 npcs.bandits#1
 void vasal_client_game_start(vasal_client_game_s* const game,
-	const vasal_engine_map_s* const map) {
+	const vasal_engine_map_s* const map,
+	const vasal_engine_rules_s* const rules) {
 	game->world = &_vasal_client_game_world;
-	vasal_engine_world_start(game->world, map, NULL, 1U);
+	vasal_engine_world_start(game->world, map, rules, 1U);
 	vasal_engine_map_point_s spawn = { 0U, 0U };
 	if (0U < map->spawn_count) {
 		spawn = map->spawns[0].position;
 	}
 	game->vasal = vasal_engine_world_add_vasal(game->world, spawn);
-	for (size_t g = 0U; g < vasal_engine_world_groups; g++) {
-		for (size_t t = 0U; t < _vasal_client_game_start_troops[g]; t++) {
-			(void)vasal_engine_world_add_troop(game->world, game->vasal, g,
-				_vasal_client_game_speeds[t % 3U]);
-		}
+	vasal_engine_world_add_army(game->world, game->vasal);
+	for (size_t c = 0U; c < map->camp_count; c++) {
+		(void)vasal_engine_world_add_camp(game->world,
+			map->camps[c].position);
 	}
 	game->selection = 1U;
 	game->focus = 0U;
@@ -229,6 +225,17 @@ void vasal_client_game_cycle_focus(vasal_client_game_s* const game) {
 			return;
 		}
 	}
+}
+
+// spec: vintaines.modes client.input#1
+void vasal_client_game_set_mode(vasal_client_game_s* const game,
+	const vasal_engine_world_mode_e mode) {
+	if (0U == game->selection) {
+		vasal_client_game_notify(game, "Select a vintaine first.");
+		return;
+	}
+	vasal_engine_world_set_mode(game->world, game->vasal, game->selection,
+		mode);
 }
 
 // spec: vintaines.pace#4 vintaines.queue#8

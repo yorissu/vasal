@@ -8,11 +8,11 @@
 // spec: client.render#2
 cairo_test_new(client_depth, lower_ones_drawn_later) {
 	vasal_client_depth_troop_s troops[5] = {
-		{ 1.0f, 9.0f, false, true, -1, 1.0f },
-		{ 2.0f, 3.0f, false, true, -1, 1.0f },
-		{ 3.0f, 7.5f, true, true, -1, 1.0f },
-		{ 4.0f, 3.0f, false, false, 3, 1.0f },
-		{ 5.0f, 0.5f, false, true, -1, 1.0f }
+		{ 1.0f, 9.0f, false, true, -1, 1.0f, 0U, false, false },
+		{ 2.0f, 3.0f, false, true, -1, 1.0f, 0U, false, false },
+		{ 3.0f, 7.5f, true, true, -1, 1.0f, 0U, false, false },
+		{ 4.0f, 3.0f, false, false, 3, 1.0f, 0U, false, false },
+		{ 5.0f, 0.5f, false, true, -1, 1.0f, 0U, false, false }
 	};
 	vasal_client_depth_sort(troops, 5U);
 	cairo_assert_nreq(troops[0].x, 2.0f);
@@ -25,7 +25,9 @@ cairo_test_new(client_depth, lower_ones_drawn_later) {
 
 // spec: client.render#2
 cairo_test_new(client_depth, empty_and_single) {
-	vasal_client_depth_troop_s troop = { 1.0f, 2.0f, false, true, -1, 1.0f };
+	vasal_client_depth_troop_s troop = {
+		1.0f, 2.0f, false, true, -1, 1.0f, 0U, false, false
+	};
 	vasal_client_depth_sort(&troop, 0U);
 	vasal_client_depth_sort(&troop, 1U);
 	cairo_assert_nreq(troop.y, 2.0f);

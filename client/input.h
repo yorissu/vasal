@@ -2,7 +2,8 @@
 /// Mouse and keyboard. Keys 1 to 5 select a vintaine and 6 the centenar;
 /// with shift they add or remove it from the selection. Tab moves the
 /// focus. Z switches the selected groups between in step and at the
-/// run. Pressing a group's key twice quickly selects every group. The
+/// run; Q, W, E and R set them aggressive, guarding, defensive or
+/// fleeing. Pressing a group's key twice quickly selects every group. The
 /// mouse never selects groups (client/keys.h). The right button orders
 /// the current action; the left one opens the action wheel, which picks
 /// it (client/wheel.h).

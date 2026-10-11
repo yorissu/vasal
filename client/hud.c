@@ -86,6 +86,14 @@ static void _vasal_client_hud_groups(const vasal_client_game_s* const game,
 			DrawText(pace, left + box - 6 - MeasureText(pace, 10), top + 8,
 				10, running ? _vasal_client_hud_focus
 					: _vasal_client_hud_muted);
+			// spec: vintaines.modes client.input#1
+			static const char* const modes[vasal_engine_world_modes] = {
+				"aggr", "guard", "def", "flee"
+			};
+			const char* const mode = modes[group->mode];
+			DrawText(mode, left + box - 6 - MeasureText(mode, 10), top + 40,
+				10, group->fighting ? _vasal_client_hud_selected
+					: _vasal_client_hud_muted);
 		}
 		_vasal_client_hud_number(label,
 			(vasal_engine_world_centenar == g) ? "C " : "",
